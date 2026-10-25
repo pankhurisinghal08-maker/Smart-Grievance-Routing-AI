@@ -1,30 +1,129 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Submit Grievance</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Submit Grievance | Smart AI Routing</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
 <body>
-    <div class="container mt-5" style="max-width: 600px;">
-        <h2 class="mb-4 text-center text-white">Student Grievance Form</h2>
-        
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark bg-opacity-75 shadow-sm mb-4">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/">
+                <i class="bi bi-robot me-1"></i> Smart Grievance AI
+            </a>
+            <div class="d-flex align-items-center">
+                <a href="/" class="btn btn-sm btn-outline-light me-2 active">
+                    <i class="bi bi-pencil-square"></i> Student Form
+                </a>
+                <a href="/admin" class="btn btn-sm btn-light me-3">
+                    <i class="bi bi-speedometer2"></i> Admin Dashboard
+                </a>
+                <span class="badge bg-secondary text-uppercase" title="Active database engine">
+                    <i class="bi bi-database"></i> {{ backend if backend else 'DB' }}
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container pb-5" style="max-width: 650px;">
+        <h2 class="mb-4 text-center text-white fw-bold">
+            <i class="bi bi-shield-check me-1"></i> Student Grievance Portal
+        </h2>
+
+        <!-- Result / Notification Alerts -->
+        {% if result %}
+            {% if result.success %}
+                <div class="alert alert-success shadow-sm mb-4 rounded-3 p-4">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="bi bi-check-circle-fill fs-3 text-success me-2"></i>
+                        <div>
+                            <h5 class="mb-0 fw-bold">Grievance Submitted Successfully!</h5>
+                            <small class="text-muted">Student: {{ result.student_name }} (Roll No: {{ result.roll_number }})</small>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row g-2 text-center my-2">
+                        <div class="col-6">
+                            <div class="p-2 bg-white rounded border">
+                                <small class="text-muted d-block">AI Routed Department</small>
+                                <span class="badge bg-primary fs-6 mt-1">{{ result.department }}</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-white rounded border">
+                                <small class="text-muted d-block">Priority Assessment</small>
+                                {% if result.priority == 'High Priority' %}
+                                    <span class="badge bg-danger fs-6 mt-1">
+                                        <i class="bi bi-exclamation-triangle-fill"></i> High Priority
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-success fs-6 mt-1">Normal</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <a href="/" class="btn btn-sm btn-outline-success flex-grow-1">Submit Another Grievance</a>
+                        <a href="/admin" class="btn btn-sm btn-success flex-grow-1">View on Admin Dashboard</a>
+                    </div>
+                </div>
+            {% else %}
+                <div class="alert alert-danger shadow-sm mb-4 rounded-3 d-flex align-items-center">
+                    <i class="bi bi-exclamation-octagon-fill fs-4 me-3 flex-shrink-0"></i>
+                    <div>
+                        <strong>Submission Error:</strong> {{ result.message }}
+                    </div>
+                </div>
+            {% endif %}
+        {% endif %}
+
+        <!-- Grievance Submission Form -->
         <form action="/submit" method="POST" class="form-container">
             <div class="mb-3">
-                <label class="form-label">Your Roll Number</label>
-                <input type="text" name="roll_number" class="form-control" required>
+                <label class="form-label fw-semibold">
+                    <i class="bi bi-person-badge me-1"></i> Your Roll Number
+                </label>
+                <input 
+                    type="text" 
+                    name="roll_number" 
+                    class="form-control" 
+                    placeholder="e.g. 123456" 
+                    value="{{ result.roll_number if result and not result.success else '' }}"
+                    required
+                >
+                <div class="form-text mt-1 text-muted">
+                    <i class="bi bi-info-circle"></i> Test Student Roll Number in database is: <strong>123456</strong>
+                </div>
             </div>
-            
+
             <div class="mb-3">
-                <label class="form-label">Describe your problem</label>
-                <textarea name="description" class="form-control" rows="5" required></textarea>
-                <small id="char-count" class="text-muted">500 character(s) left</small>
+                <label class="form-label fw-semibold">
+                    <i class="bi bi-card-text me-1"></i> Describe your problem
+                </label>
+                <textarea 
+                    name="description" 
+                    class="form-control" 
+                    rows="5" 
+                    maxlength="500"
+                    placeholder="Describe your issue in detail. The AI will automatically route it to the right department (IT, Maintenance, Cafeteria, Library, Finance, Security, Discipline)..." 
+                    required
+                >{{ result.description if result and not result.success else '' }}</textarea>
+                <div class="d-flex justify-content-between mt-1">
+                    <small id="char-count" class="text-muted">500 character(s) left</small>
+                    <small class="text-muted">Max 500 characters</small>
+                </div>
             </div>
-            
-            <button type="submit" class="btn btn-orange w-100">Submit</button>
+
+            <button type="submit" class="btn btn-orange w-100 py-2 fs-6 fw-bold shadow-sm">
+                <i class="bi bi-send-fill me-1"></i> Submit Grievance
+            </button>
         </form>
     </div>
-    
+
     <script src="{{ url_for('static', filename='custom.js') }}"></script>
 </body>
 </html>
