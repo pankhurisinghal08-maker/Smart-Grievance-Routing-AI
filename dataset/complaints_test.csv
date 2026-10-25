@@ -1,0 +1,101 @@
+description,department
+"My laptop refuses to join the campus Wi-Fi even after I forgot the network and reconnected twice",IT
+"The portal keeps throwing me out the moment I try to open my semester result",IT
+"I never got the verification code for the student email reset and the timer ran out",IT
+"Projector in room 204 shows only a blue screen and the lecturer cannot start the slides",IT
+"The online exam page froze at question 18 and my answers vanished",IT
+"Computer number 7 in the library reading hall will not boot at all",IT
+"Lab PCs are so slow that Python takes five minutes just to open",IT
+"My ID card barcode will not scan on the attendance machine, but the machine itself seems dead too",IT
+"Someone logged into my university account from another city last night and changed my password",IT
+"The printing software in the computer lab says no printer found even though the printer is on",IT
+"LMS shows my assignment as not submitted although I have the confirmation screenshot",IT
+"Hostel Wi-Fi drops every evening around eight when everyone is online",IT
+"The fan above my desk in the seminar hall wobbles and makes a scary grinding sound",Maintenance
+"There is a leaking pipe in the second floor washroom and water is spreading into the corridor",Maintenance
+"Tube light outside the physics lab flickers all day and gives me a headache",Maintenance
+"The door of cabin 3 in the study room will not lock from the inside",Maintenance
+"Lift in the main block stopped between floors and people are knocking from inside",Maintenance
+"Water cooler near the admin office tastes like rust and runs warm",Maintenance
+"My hostel room window glass is cracked and rain comes in during storms",Maintenance
+"Sparks came out of the socket beside my bed and I smelled burning plastic",Maintenance
+"The air conditioner in the library is dripping onto the book shelves",Maintenance
+"Broken bench near the basketball court has a sharp nail sticking out",Maintenance
+"Ceiling plaster fell down in classroom 12 just after the lecture ended",Maintenance
+"The tap in the cafeteria wash area is stuck open and wasting water",Maintenance
+"The samosa I bought today was cold in the middle and tasted stale",Cafeteria
+"I paid for lunch but the counter said payment not received and charged me again",Cafeteria
+"Found a long hair in my dal and the server just shrugged",Cafeteria
+"Canteen rates for tea went up again without any notice board announcement",Cafeteria
+"The juice stall ran out of change and kept my extra fifty rupees",Cafeteria
+"Nobody cleans the tables after lunch and flies are everywhere",Cafeteria
+"The milkshake machine gave me a cup full of ice with almost no milk",Cafeteria
+"I lost my wallet near the food counter and the staff say they never saw it",Cafeteria
+"Mess menu says paneer but we got only potato for the third day running",Cafeteria
+"My friend felt sick after eating the chicken roll and is vomiting in the hostel",Cafeteria
+"A computer in the cafeteria billing section shows the wrong total for my order",Cafeteria
+"The cafeteria closes ten minutes before the posted time and we get turned away",Cafeteria
+"Some seniors are forcing first years to give them money for ragging fees and it is scaring everyone",Discipline
+"A classmate keeps cheating by sharing answers through his smartwatch during tests",Discipline
+"A group of boys were smoking inside the washroom near the auditorium",Discipline
+"Two students got into a fistfight outside the lab and one is bleeding",Discipline
+"A professor made repeated unwanted comments about my appearance and I feel unsafe in his class",Discipline
+"Someone wrote offensive messages about me on the bathroom wall",Discipline
+"A student brought alcohol into the hostel last night and was shouting in the corridor",Discipline
+"I am being harassed through anonymous messages by someone from my department",Discipline
+"Students are bunking classes and signing proxy attendance for each other",Discipline
+"A senior threatened to damage my laptop if I report him",Discipline
+"Loud music from the neighboring room after midnight keeps the whole floor awake",Discipline
+"A guy keeps following me from the library to the hostel gate every evening and it is making me afraid",Discipline
+"A stranger without an ID card walked into the girls hostel today",Security
+"My bike was stolen from the parking lot while I was in the exam",Security
+"The main gate guard let a delivery boy in without checking anything",Security
+"There is no light near the back road and I feel in danger walking home after the evening lab",Security
+"CCTV camera at the library entrance has been pointing at the wall for weeks",Security
+"Someone broke the lock on my locker in the sports room and took my calculator",Security
+"A suspicious bag is lying unattended near the bus stop",Security
+"Emergency button in the hostel corridor does nothing when pressed",Security
+"A drunk outsider was shouting at students outside the campus gate",Security
+"Thick smoke is coming out of the electrical room behind the engineering block and I think there is a fire",Security
+"Visitors are entering the campus through a gap in the boundary wall near the playground",Security
+"A man took photos of girls near the canteen and ran away when I confronted him",Security
+"The scholarship money has not reached my account even after two months",Finance
+"I paid my semester fee online and the receipt still shows pending",Finance
+"The fee counter charged me a late fine though I paid before the deadline",Finance
+"My refund for the cancelled hostel seat has not been returned yet",Finance
+"Accounts office says my payment failed but my bank already deducted the amount",Finance
+"I need a fee structure certificate for my education loan and nobody answers at the counter",Finance
+"The exam form fee was taken twice from my card",Finance
+"Why is there an extra development charge in my fee that was not mentioned in the brochure",Finance
+"I lost my fee receipt and the cashier refuses to give a duplicate copy",Finance
+"My caution money deposit was never returned after I completed the course",Finance
+"The online payment page keeps loading forever while the last date is tomorrow",Finance
+"Someone tricked me over phone pretending to be from the accounts office and took money from my account",Finance
+"The book I reserved last week was handed to someone else",Library
+"The library closes during lunch break which is the only free time I have",Library
+"Pages are torn out of the reference copy of Operating System Concepts",Library
+"I returned my book on time but the system still shows it as overdue and fines me",Library
+"Two students were talking loudly on a video call inside the silent reading area",Library
+"The library has no copies of the new data science textbook that the syllabus asks for",Library
+"My library card was blocked without any reason",Library
+"Someone left food crumbs and a spilled drink on the study table and the books got wet",Library
+"The librarian was rude when I asked for help finding a journal",Library
+"Seats in the reading hall are always taken by bags kept since morning",Library
+"The photocopier near the library is out of paper and charges too much",Library
+"The e-journal login on the library website says subscription expired",Library
+"The computer I use for e-books in the library keeps restarting by itself",IT
+"I got my pocket money stolen from my bag inside the library",Security
+"Someone in the library is sending me threatening messages to my phone and I am scared",Discipline
+"The canteen card machine charged my account but the balance on the portal did not change",Finance
+"The projector in the library seminar room has a burning smell and smoke is rising from it",Maintenance
+"My lost ID card was used by someone else to enter the library",Security
+"A professor deducted marks because I complained to the department about his behavior",Discipline
+"Hostel mess staff are demanding extra cash for my meal plan and gave no receipt",Finance
+"A friend collapsed after a fight in the hostel and we cannot find any warden",Discipline
+"The library book return box is jammed shut and my books are stuck outside",Library
+"Water on the floor near the cafeteria counter made two people slip yesterday",Maintenance
+"There is a gas smell near the cafeteria kitchen and everyone is worried about a blast",Cafeteria
+"Someone is hacking the library catalog system and changing book records",IT
+"I think someone placed a hidden camera in the changing room near the sports ground",Security
+"The cafeteria staff refused to refund my money for a spoiled sandwich",Cafeteria
+"The library silent zone has a loose ceiling fan hanging by one wire and it looks dangerous",Maintenance

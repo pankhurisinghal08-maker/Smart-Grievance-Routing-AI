@@ -1,4 +1,3 @@
--- This table stores the student login details
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     roll_number VARCHAR(20) NOT NULL UNIQUE,
@@ -7,7 +6,6 @@ CREATE TABLE users (
     role VARCHAR(20) DEFAULT 'student'
 );
 
--- This table stores the actual complaints
 CREATE TABLE complaints (
     id INT AUTO_INCREMENT PRIMARY KEY,
     student_id INT,
@@ -18,3 +16,6 @@ CREATE TABLE complaints (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES users(id)
 );
+
+-- Adds your test student automatically
+INSERT INTO users (roll_number, name, password, role) VALUES ('123456', 'Test Student', 'password123', 'student');

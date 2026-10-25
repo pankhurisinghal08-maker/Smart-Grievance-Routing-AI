@@ -1,9 +1,7 @@
-/* Make the whole page background a nice blue color */
 body {
-    background-color: #6a9cce !important;
+    background-color: #6a9cce !important; 
 }
 
-/* Make the form box white with curved corners and a small shadow */
 .form-container {
     background-color: white;
     border-radius: 10px;
@@ -11,14 +9,12 @@ body {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Make the submit button orange */
 .btn-orange {
     background-color: #ff7f00;
     color: white;
     border: none;
 }
 
-/* Make the orange button darker when the mouse touches it */
 .btn-orange:hover {
     background-color: #e67300;
     color: white;

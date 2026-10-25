@@ -5,12 +5,11 @@ from model.nlp_model import predict_department
 
 app = Flask(__name__)
 
-# This function connects your Python code to your XAMPP database
 def get_db():
     return mysql.connector.connect(
         host="localhost",
         user="root",
-        password="",      # XAMPP default password is empty
+        password="", # Type your MySQL password here if you created one
         database="grievance_system" 
     )
 
@@ -23,21 +22,17 @@ def submit():
     roll_number = request.form['roll_number']
     description = request.form['description']
     
-    # 1. Ask the AI to guess the department
+    # Use AI and Rules
     department = predict_department(description)
-    
-    # 2. Check if the issue is an emergency
     priority = get_priority_level(description)
     
-    # 3. Connect to the database
+    # Save to database
     db = get_db()
     cursor = db.cursor()
     
-    # 4. Find the student in the database using their roll number
     cursor.execute("SELECT id FROM users WHERE roll_number = %s", (roll_number,))
     student = cursor.fetchone()
     
-    # 5. Save the complaint if the student exists
     if student:
         student_id = student[0]
         sql = "INSERT INTO complaints (student_id, description, predicted_department, priority_level) VALUES (%s, %s, %s, %s)"
@@ -45,7 +40,7 @@ def submit():
         db.commit()
         result = f"Success! AI routed this to: {department}. Priority: {priority}"
     else:
-        result = "Error: Roll number not found in the system. Please register first."
+        result = "Error: Roll number not found in the database. Use 123456 to test."
         
     cursor.close()
     db.close()
@@ -54,7 +49,24 @@ def submit():
 
 @app.route('/admin')
 def admin():
-    return render_template('admin_dashboard.html')
+    db = get_db()
+    # dictionary=True makes it easy to read data by column names
+    cursor = db.cursor(dictionary=True)
+    
+    # Get all complaints and match them with student roll numbers
+    query = """
+        SELECT c.id, u.roll_number, c.description, c.predicted_department, c.priority_level, c.status 
+        FROM complaints c
+        JOIN users u ON c.student_id = u.id
+        ORDER BY c.id DESC
+    """
+    cursor.execute(query)
+    complaints = cursor.fetchall()
+    
+    cursor.close()
+    db.close()
+    
+    return render_template('admin_dashboard.html', complaints=complaints)
 
 if __name__ == '__main__':
     app.run(debug=True)
