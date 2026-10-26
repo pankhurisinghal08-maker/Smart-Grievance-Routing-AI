@@ -99,3 +99,8 @@ description,department
 "I think someone placed a hidden camera in the changing room near the sports ground",Security
 "The cafeteria staff refused to refund my money for a spoiled sandwich",Cafeteria
 "The library silent zone has a loose ceiling fan hanging by one wire and it looks dangerous",Maintenance
+"Cannot download examination hall ticket before tomorrow's final end term exam",Examination
+"Examination timetable clash between elective paper and core theory subject",Examination
+"Midterm exam answer sheet paper rechecking fee paid but grade card not revised",Examination
+"Student name misspelled on the final semester consolidated examination marksheet",Examination
+"Medical certificate submitted for missed examination paper has not been reviewed by exam cell",Examination
