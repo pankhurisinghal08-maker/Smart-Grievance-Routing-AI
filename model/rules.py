@@ -20,6 +20,22 @@ URGENT_KEYWORDS = [
     r"injur(?:y|ies|ed)",
     r"bleeding",
     r"ambulance",
+    r"critical",
+    r"severe",
+    r"immediate",
+    r"poison(?:ing)?",
+    r"hospital",
+    r"suicid(?:e|al)",
+    r"weapon",
+    r"collapsed?",
+    r"shock(?:ed)?",
+    r"panic",
+    r"short\s+circuit",
+    r"accident",
+    r"unconscious",
+    r"theft",
+    r"stolen",
+    r"sos",
 ]
 
 # Pre-compile the pattern using word boundaries
@@ -40,3 +56,4 @@ def get_priority_level(text):
         return "High Priority"
 
     return "Normal"
+
