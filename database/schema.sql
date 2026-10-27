@@ -31,3 +31,26 @@ CREATE TABLE complaints (
     FOREIGN KEY (student_id) REFERENCES users(id),
     FOREIGN KEY (assigned_faculty_id) REFERENCES faculty(id)
 );
+
+CREATE TABLE complaint_comments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    complaint_id INT NOT NULL,
+    author_name VARCHAR(100) NOT NULL,
+    author_role VARCHAR(20) NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (complaint_id) REFERENCES complaints(id)
+);
+
+CREATE TABLE notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NULL,
+    faculty_id INT NULL,
+    complaint_id INT NOT NULL,
+    message TEXT NOT NULL,
+    is_read TINYINT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (faculty_id) REFERENCES faculty(id),
+    FOREIGN KEY (complaint_id) REFERENCES complaints(id)
+);
