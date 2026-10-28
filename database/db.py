@@ -195,3 +195,5 @@ def execute_query(sql, params=(), fetchone=False, fetchall=False, commit=False):
         if cursor:
             cursor.close()
         conn.close()
+
+# Pure MySQL backend integration without hardcoded mock records
