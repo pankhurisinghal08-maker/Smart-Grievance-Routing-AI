@@ -1,123 +1,807 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from functools import wraps
 import os
 from model.rules import get_priority_level
 from model.nlp_model import predict_department
-from database.db import execute_query, get_backend_name, get_connection
+from database.db import execute_query, get_backend_name
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'smart-grievance-routing-ai-key-2026')
+app.secret_key = os.getenv('SECRET_KEY', 'smart-grievance-ai-secret-key-2026')
 
-def get_db():
-    """Backward compatibility helper for direct database connection."""
-    return get_connection()
+# Updated Administrative Credentials
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'Pankhuri')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'Pankhuri1007')
+VALID_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Closed', 'Resolved']
 
-@app.route('/')
-def home():
-    backend = get_backend_name()
-    return render_template('submit_form.html', backend=backend)
 
-@app.route('/submit', methods=['GET', 'POST'])
-def submit():
-    if request.method == 'GET':
-        return redirect(url_for('home'))
+# ==============================================================================
+# ROLE-BASED ACCESS CONTROL (RBAC) DECORATORS
+# ==============================================================================
 
-    roll_number = request.form.get('roll_number', '').strip()
-    description = request.form.get('description', '').strip()
-    backend = get_backend_name()
-
-    if not roll_number or not description:
-        error_result = {
-            'success': False,
-            'message': 'Please provide both your roll number and a problem description.',
-            'roll_number': roll_number,
-            'description': description
-        }
-        return render_template('submit_form.html', result=error_result, backend=backend)
-
-    # 1. AI Department Classification & Rule-based Priority Detection
-    department = predict_department(description)
-    priority = get_priority_level(description)
-
-    # 2. Look up the student in the database
-    student = execute_query(
-        "SELECT id, name FROM users WHERE roll_number = %s",
-        (roll_number,),
+def student_for_roll(roll_number):
+    if not roll_number:
+        return None
+    cleaned = str(roll_number).strip()
+    return execute_query(
+        'SELECT id, name, roll_number FROM users WHERE roll_number = %s AND LOWER(role) = %s',
+        (cleaned, 'student'),
         fetchone=True
     )
 
-    if student:
-        student_id = student['id']
-        student_name = student.get('name', 'Student')
+def student_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        role = session.get('role')
+        if not role:
+            return redirect(url_for('login', tab='student'))
+        if role == 'admin':
+            flash('Access Restricted: Administrators cannot access Student View. Please use Switch User or log out first.', 'warning')
+            return redirect(url_for('admin'))
+        if role == 'faculty':
+            flash('Access Restricted: Faculty officers cannot access Student View. Please use Switch User or log out first.', 'warning')
+            return redirect(url_for('assigned_dashboard'))
+        if role != 'student' or not session.get('student_id'):
+            session.clear()
+            return redirect(url_for('login', tab='student'))
+        return view(*args, **kwargs)
+    return wrapped
 
-        # 3. Save complaint into database
+def faculty_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        role = session.get('role')
+        if not role:
+            return redirect(url_for('login', tab='faculty'))
+        if role == 'student':
+            flash('Access Denied: Students do not have permission to access the Faculty Assigned Operations Desk.', 'danger')
+            return redirect(url_for('student_portal'))
+        if role == 'admin':
+            flash('Access Restricted: Administrators must use the Central Admin Console.', 'warning')
+            return redirect(url_for('admin'))
+        if role != 'faculty' or not session.get('faculty_id'):
+            session.clear()
+            return redirect(url_for('login', tab='faculty'))
+        return view(*args, **kwargs)
+    return wrapped
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        role = session.get('role')
+        if not role:
+            return redirect(url_for('login', tab='admin'))
+        if role == 'student':
+            flash('Access Denied: Students do not have permission to access the Central Admin Console.', 'danger')
+            return redirect(url_for('student_portal'))
+        if role == 'faculty':
+            flash('Access Denied: Faculty officers do not have permission to access the Central Admin Console.', 'danger')
+            return redirect(url_for('assigned_dashboard'))
+        if role != 'admin':
+            session.clear()
+            return redirect(url_for('login', tab='admin'))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+# ==============================================================================
+# NOTIFICATION & HISTORY HELPERS
+# ==============================================================================
+
+def add_notification(message, complaint_id, user_id=None, faculty_id=None):
+    try:
         execute_query(
-            "INSERT INTO complaints (student_id, description, predicted_department, priority_level) VALUES (%s, %s, %s, %s)",
-            (student_id, description, department, priority),
+            'INSERT INTO notifications (user_id, faculty_id, complaint_id, message) VALUES (%s, %s, %s, %s)',
+            (user_id, faculty_id, complaint_id, message),
             commit=True
         )
+    except Exception as e:
+        print(f"[Notification Error] {e}")
 
-        result = {
-            'success': True,
-            'message': f"Grievance successfully submitted and routed by AI!",
-            'department': department,
-            'priority': priority,
-            'roll_number': roll_number,
-            'student_name': student_name
-        }
-    else:
-        result = {
-            'success': False,
-            'message': "Error: Roll number not found in the database. Use 123456 to test.",
-            'roll_number': roll_number,
-            'description': description
-        }
-
-    return render_template('submit_form.html', result=result, backend=backend)
-
-@app.route('/admin')
-def admin():
-    backend = get_backend_name()
-    
-    # Get all complaints joined with student information
-    query = """
-        SELECT c.id, u.roll_number, u.name AS student_name, c.description,
-               c.predicted_department, c.priority_level, c.status, c.created_at
-        FROM complaints c
-        LEFT JOIN users u ON c.student_id = u.id
+def complaint_history(student_id):
+    complaints = execute_query('''
+        SELECT c.id, c.description, c.predicted_department, c.priority_level, c.status, 
+               c.created_at, c.completion_note, c.student_feedback, c.closed_at,
+               f.name AS faculty_name, f.email AS faculty_email 
+        FROM complaints c 
+        LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+        WHERE c.student_id = %s 
         ORDER BY c.id DESC
-    """
-    complaints = execute_query(query, fetchall=True) or []
+    ''', (student_id,), fetchall=True) or []
+    
+    if complaints:
+        ids = [c['id'] for c in complaints]
+        placeholders = ', '.join(['%s'] * len(ids))
+        all_comments = execute_query(
+            f'SELECT complaint_id, author_name, author_role, message, created_at FROM complaint_comments WHERE complaint_id IN ({placeholders}) ORDER BY id ASC',
+            tuple(ids),
+            fetchall=True
+        ) or []
+        comments_by_cid = {}
+        for c in all_comments:
+            comments_by_cid.setdefault(c['complaint_id'], []).append(c)
+        for item in complaints:
+            item['comments'] = comments_by_cid.get(item['id'], [])
+    return complaints
 
-    # Calculate statistics for the dashboard
+
+# ==============================================================================
+# MAIN GATEWAY & UNIFIED PORTAL LOGIN
+# ==============================================================================
+
+@app.route('/')
+def home():
+    role = session.get('role')
+    if role == 'admin':
+        return redirect(url_for('admin'))
+    if role == 'faculty' and session.get('faculty_id'):
+        return redirect(url_for('assigned_dashboard'))
+    if role == 'student' and session.get('student_id'):
+        return redirect(url_for('student_portal'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    # If a switch or reset is explicitly requested via query parameter, clear the session
+    if request.args.get('switch') or request.args.get('switched'):
+        session.clear()
+
+    # If already logged into a role and not switching, send to their specific view
+    if request.method == 'GET' and not (request.args.get('switch') or request.args.get('switched')):
+        role = session.get('role')
+        if role == 'student' and session.get('student_id'):
+            return redirect(url_for('student_portal'))
+        if role == 'faculty' and session.get('faculty_id'):
+            return redirect(url_for('assigned_dashboard'))
+        if role == 'admin':
+            return redirect(url_for('admin'))
+
+    faculty_list = execute_query('SELECT id, name, department, email FROM faculty ORDER BY department ASC, name ASC', fetchall=True) or []
+    active_tab = request.args.get('tab', 'student').strip().lower()
+    if active_tab not in ('student', 'faculty', 'admin'):
+        active_tab = 'student'
+
+    error = None
+    if request.method == 'POST':
+        role_type = request.form.get('role_type', '').strip().lower()
+
+        # 1. STUDENT LOGIN
+        if role_type == 'student':
+            active_tab = 'student'
+            roll = request.form.get('roll_number', '').strip()
+            if not roll:
+                error = 'Please enter your Registration Number.'
+            else:
+                student = student_for_roll(roll)
+                if student:
+                    session.clear()
+                    session['role'] = 'student'
+                    session['student_id'] = student['id']
+                    session['student_name'] = student['name']
+                    session['roll_number'] = student['roll_number']
+                    return redirect(url_for('student_portal'))
+                error = f"Registration number '{roll}' was not found in the university database. Please verify your Registration Number."
+
+        # 2. FACULTY ASSIGNED DESK LOGIN
+        elif role_type == 'faculty':
+            active_tab = 'faculty'
+            faculty_id = request.form.get('faculty_id')
+            identifier = request.form.get('identifier', '').strip()
+            matched = None
+
+            if faculty_id:
+                matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = %s', (faculty_id,), fetchone=True)
+            elif identifier:
+                matched = execute_query(
+                    'SELECT id, name, department, email FROM faculty WHERE email = %s OR department = %s OR name LIKE %s LIMIT 1',
+                    (identifier, identifier, f"%{identifier}%"),
+                    fetchone=True
+                )
+            else:
+                # Default to Parth Singhal (id: 1, IT department)
+                matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = 1', fetchone=True)
+
+            if matched:
+                session.clear()
+                session['role'] = 'faculty'
+                session['faculty_id'] = str(matched['id'])
+                session['faculty_name'] = matched['name']
+                session['faculty_dept'] = matched['department']
+                return redirect(url_for('assigned_dashboard'))
+            error = "Please select an assigned officer from the list or enter a valid email / department."
+
+        # 3. ADMIN CONSOLE LOGIN
+        elif role_type == 'admin':
+            active_tab = 'admin'
+            user = request.form.get('username', '').strip()
+            pwd = request.form.get('password', '').strip()
+            if user == ADMIN_USERNAME and pwd == ADMIN_PASSWORD:
+                session.clear()
+                session['role'] = 'admin'
+                session['admin_user'] = ADMIN_USERNAME
+                return redirect(url_for('admin'))
+            error = 'Invalid administrator credentials. Please check your username and password.'
+
+    return render_template(
+        'login.html',
+        faculty_list=faculty_list,
+        active_tab=active_tab,
+        error=error
+    )
+
+@app.route('/admin/login')
+def admin_login():
+    return redirect(url_for('login', tab='admin'))
+
+@app.route('/faculty/login')
+def faculty_login():
+    return redirect(url_for('login', tab='faculty'))
+
+@app.route('/student/login')
+def student_login_redirect():
+    return redirect(url_for('login', tab='student'))
+
+
+# ==============================================================================
+# MODULE 1: USER VIEW (STUDENT GRIEVANCE PORTAL)
+# ==============================================================================
+
+@app.route('/student')
+@student_required
+def student_portal():
+    student = execute_query('SELECT id, name, roll_number FROM users WHERE id = %s', (session['student_id'],), fetchone=True)
+    if not student:
+        session.clear()
+        return redirect(url_for('login', tab='student'))
+
+    alerts = execute_query(
+        'SELECT id, message, created_at FROM notifications WHERE user_id = %s ORDER BY id DESC LIMIT 20',
+        (student['id'],),
+        fetchall=True
+    ) or []
+
+    submitted_id = request.args.get('submitted')
+    result = None
+    if submitted_id:
+        comp = execute_query('''
+            SELECT c.id, c.description, c.predicted_department, c.priority_level,
+                   u.name AS student_name, u.roll_number, f.name AS faculty_name, f.email AS faculty_email
+            FROM complaints c
+            JOIN users u ON c.student_id = u.id
+            LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+            WHERE c.id = %s AND c.student_id = %s
+        ''', (submitted_id, student['id']), fetchone=True)
+        if comp:
+            result = {
+                'success': True,
+                'id': comp['id'],
+                'student_name': comp['student_name'],
+                'roll_number': comp['roll_number'],
+                'department': comp['predicted_department'],
+                'faculty_name': comp['faculty_name'] or f"Department Desk ({comp['predicted_department']})",
+                'faculty_email': comp.get('faculty_email') or 'desk@college.edu',
+                'priority': comp['priority_level'],
+                'description': comp['description']
+            }
+
+    history = complaint_history(student['id'])
+    
+    requested_tab = request.args.get('tab', '').strip().lower()
+    if requested_tab in ('request', 'status', 'notifications'):
+        active_tab = requested_tab
+    elif result:
+        active_tab = 'request'
+    elif history:
+        active_tab = 'status'
+    else:
+        active_tab = 'request'
+
+    return render_template(
+        'submit_form.html',
+        backend=get_backend_name(),
+        student=student,
+        history=history,
+        alerts=alerts,
+        result=result,
+        active_tab=active_tab
+    )
+
+@app.route('/submit', methods=['POST'])
+@student_required
+def submit():
+    student = execute_query('SELECT id, name FROM users WHERE id = %s', (session['student_id'],), fetchone=True)
+    if not student:
+        session.clear()
+        return redirect(url_for('login', tab='student'))
+
+    description = request.form.get('description', '').strip()
+    if not description:
+        return redirect(url_for('student_portal', error='Please provide a description of your grievance.', tab='request'))
+
+    department = predict_department(description)
+    priority = get_priority_level(description)
+
+    # Intelligently assign to the faculty member in that department with the lowest active workload
+    faculty = execute_query('''
+        SELECT f.id, f.name, f.department, f.email, COUNT(c.id) AS active_load
+        FROM faculty f
+        LEFT JOIN complaints c ON f.id = c.assigned_faculty_id AND c.status NOT IN ('Closed', 'Resolved')
+        WHERE f.department = %s
+        GROUP BY f.id, f.name, f.department, f.email
+        ORDER BY active_load ASC, f.id ASC
+        LIMIT 1
+    ''', (department,), fetchone=True)
+
+    if not faculty:
+        faculty = execute_query('''
+            SELECT f.id, f.name, f.department, f.email, COUNT(c.id) AS active_load
+            FROM faculty f
+            LEFT JOIN complaints c ON f.id = c.assigned_faculty_id AND c.status NOT IN ('Closed', 'Resolved')
+            GROUP BY f.id, f.name, f.department, f.email
+            ORDER BY active_load ASC, f.id ASC
+            LIMIT 1
+        ''', fetchone=True)
+        if faculty:
+            department = faculty['department']
+
+    complaint_id = execute_query(
+        'INSERT INTO complaints (student_id, description, predicted_department, assigned_faculty_id, priority_level, status) VALUES (%s, %s, %s, %s, %s, %s)',
+        (student['id'], description, department, faculty['id'] if faculty else None, priority, 'Pending'),
+        commit=True
+    )
+
+    execute_query(
+        'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+        (complaint_id, student['name'], 'Student', 'Grievance submitted for review.'),
+        commit=True
+    )
+
+    faculty_text = f"{faculty['name']} ({faculty['department']})" if faculty else department
+    add_notification(
+        f"Grievance #{complaint_id} was routed to {faculty_text}. Priority: {priority}.",
+        complaint_id,
+        user_id=student['id'],
+        faculty_id=faculty['id'] if faculty else None
+    )
+
+    return redirect(url_for('student_portal', submitted=complaint_id, tab='request'))
+
+@app.route('/student/comment/<int:complaint_id>', methods=['POST'])
+@student_required
+def student_add_comment(complaint_id):
+    student = execute_query('SELECT id, name FROM users WHERE id = %s', (session['student_id'],), fetchone=True)
+    if not student:
+        session.clear()
+        return redirect(url_for('login', tab='student'))
+
+    message = request.form.get('message', '').strip()
+    complaint = execute_query(
+        'SELECT id, student_id, assigned_faculty_id FROM complaints WHERE id = %s AND student_id = %s AND status NOT IN (%s, %s)',
+        (complaint_id, student['id'], 'Closed', 'Resolved'),
+        fetchone=True
+    )
+    if complaint and message:
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, student['name'], 'Student', message[:500]),
+            commit=True
+        )
+        add_notification(
+            f"Student reply on #{complaint_id}: {message[:100]}",
+            complaint_id,
+            faculty_id=complaint.get('assigned_faculty_id')
+        )
+    return redirect(url_for('student_portal', tab='status'))
+
+@app.route('/feedback/<int:complaint_id>', methods=['POST'])
+@student_required
+def submit_feedback(complaint_id):
+    feedback = request.form.get('feedback', '').strip()
+    complaint = execute_query(
+        'SELECT id, assigned_faculty_id FROM complaints WHERE id = %s AND student_id = %s AND status = %s',
+        (complaint_id, session['student_id'], 'Completed - Awaiting Feedback'),
+        fetchone=True
+    )
+    if complaint and feedback:
+        execute_query(
+            'UPDATE complaints SET status = %s, student_feedback = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s',
+            ('Closed', feedback[:500], complaint_id),
+            commit=True
+        )
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, 'Student', 'Student', f"Final Feedback: {feedback[:500]} (Case Closed)"),
+            commit=True
+        )
+        add_notification(
+            f'Grievance #{complaint_id} is permanently closed. Thank you for your feedback.',
+            complaint_id,
+            user_id=session['student_id'],
+            faculty_id=complaint.get('assigned_faculty_id')
+        )
+    return redirect(url_for('student_portal', tab='status'))
+
+
+# ==============================================================================
+# MODULE 2: ASSIGNED TASK ROLES (FACULTY OPERATIONS & RESOLUTION DESK)
+# ==============================================================================
+
+@app.route('/faculty')
+@app.route('/assigned')
+@faculty_required
+def assigned_dashboard():
+    active_faculty_id = session.get('faculty_id')
+    current_faculty = execute_query('SELECT id, name, department, email FROM faculty WHERE id = %s', (active_faculty_id,), fetchone=True)
+    if not current_faculty:
+        session.clear()
+        return redirect(url_for('login', tab='faculty'))
+
+    selected_status = request.args.get('status', 'all').strip()
+
+    # Query grievances assigned to this specific faculty member
+    query = '''
+        SELECT c.id, u.roll_number, u.name AS student_name, c.description, 
+               c.predicted_department, c.priority_level, c.status, c.created_at, 
+               c.completion_note, c.student_feedback, c.assigned_faculty_id, c.closed_at,
+               f.name AS faculty_name, f.email AS faculty_email 
+        FROM complaints c 
+        LEFT JOIN users u ON c.student_id = u.id 
+        LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+        WHERE c.assigned_faculty_id = %s
+    '''
+    conditions = []
+    params = [active_faculty_id]
+
+    if selected_status and selected_status != 'all':
+        if selected_status == 'High Priority':
+            conditions.append("c.priority_level = 'High Priority'")
+        elif selected_status == 'Closed':
+            conditions.append("c.status IN ('Closed', 'Resolved')")
+        else:
+            conditions.append('c.status = %s')
+            params.append(selected_status)
+
+    if conditions:
+        query += ' AND ' + ' AND '.join(conditions)
+
+    query += " ORDER BY CASE c.priority_level WHEN 'High Priority' THEN 0 ELSE 1 END, c.id DESC"
+    complaints = execute_query(query, tuple(params), fetchall=True) or []
+
+    if complaints:
+        ids = [c['id'] for c in complaints]
+        placeholders = ', '.join(['%s'] * len(ids))
+        all_comments = execute_query(
+            f'SELECT complaint_id, author_name, author_role, message, created_at FROM complaint_comments WHERE complaint_id IN ({placeholders}) ORDER BY id ASC',
+            tuple(ids),
+            fetchall=True
+        ) or []
+        comments_by_cid = {}
+        for cmt in all_comments:
+            comments_by_cid.setdefault(cmt['complaint_id'], []).append(cmt)
+        for comp in complaints:
+            comp['comments'] = comments_by_cid.get(comp['id'], [])
+
+    # Officer's Personal Task Stats
+    my_all = execute_query("SELECT priority_level, status FROM complaints WHERE assigned_faculty_id = %s", (active_faculty_id,), fetchall=True) or []
     stats = {
-        'total': len(complaints),
-        'high_priority': sum(1 for c in complaints if c.get('priority_level') == 'High Priority'),
-        'pending': sum(1 for c in complaints if c.get('status') == 'Pending'),
-        'resolved': sum(1 for c in complaints if c.get('status') == 'Resolved'),
+        'total': len(my_all),
+        'high_priority': sum(x['priority_level'] == 'High Priority' for x in my_all),
+        'pending': sum(x['status'] == 'Pending' for x in my_all),
+        'in_progress': sum(x['status'] == 'In Progress' for x in my_all),
+        'awaiting_feedback': sum(x['status'] == 'Completed - Awaiting Feedback' for x in my_all),
+        'closed': sum(x['status'] in ('Closed', 'Resolved') for x in my_all)
     }
 
-    return render_template('admin_dashboard.html', complaints=complaints, stats=stats, backend=backend)
+    # Faculty list for transfer option
+    other_faculty = execute_query('SELECT id, name, department, email FROM faculty WHERE id != %s ORDER BY department ASC, name ASC', (active_faculty_id,), fetchall=True) or []
 
-@app.route('/admin/update-status/<int:complaint_id>', methods=['POST'])
-def update_status(complaint_id):
-    new_status = request.form.get('status', 'Pending').strip()
-    valid_statuses = ['Pending', 'In Progress', 'Resolved']
+    return render_template(
+        'assigned_dashboard.html',
+        complaints=complaints,
+        stats=stats,
+        backend=get_backend_name(),
+        current_faculty=current_faculty,
+        other_faculty=other_faculty,
+        selected_status=selected_status
+    )
 
-    if new_status in valid_statuses:
+@app.route('/faculty/update-status/<int:complaint_id>', methods=['POST'])
+@faculty_required
+def faculty_update_status(complaint_id):
+    status = request.form.get('status', '').strip()
+    active_faculty_id = session.get('faculty_id')
+    complaint = execute_query(
+        'SELECT student_id, assigned_faculty_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s',
+        (complaint_id, active_faculty_id),
+        fetchone=True
+    )
+
+    if complaint and status in VALID_STATUSES:
+        author_name = session.get('faculty_name', 'Assigned Officer')
+        if status in ('Closed', 'Resolved'):
+            execute_query('UPDATE complaints SET status = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s', (status, complaint_id), commit=True)
+        else:
+            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
         execute_query(
-            "UPDATE complaints SET status = %s WHERE id = %s",
-            (new_status, complaint_id),
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, author_name, 'Faculty', f"Working status updated to: {status}"),
             commit=True
         )
+        add_notification(
+            f"Officer {author_name} updated ticket #{complaint_id} status to: {status}.",
+            complaint_id,
+            user_id=complaint['student_id']
+        )
+    return redirect(url_for('assigned_dashboard'))
 
-    return redirect(url_for('admin'))
+@app.route('/faculty/comment/<int:complaint_id>', methods=['POST'])
+@faculty_required
+def faculty_add_comment(complaint_id):
+    message = request.form.get('message', '').strip()
+    active_faculty_id = session.get('faculty_id')
+    complaint = execute_query(
+        'SELECT student_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s AND status NOT IN (%s, %s)',
+        (complaint_id, active_faculty_id, 'Closed', 'Resolved'),
+        fetchone=True
+    )
+
+    if complaint and message:
+        author_name = session.get('faculty_name', 'Assigned Officer')
+        dept_name = session.get('faculty_dept', 'Department')
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, author_name, 'Faculty', message[:500]),
+            commit=True
+        )
+        add_notification(
+            f"Officer {author_name} ({dept_name}) replied on #{complaint_id}: {message[:100]}",
+            complaint_id,
+            user_id=complaint['student_id']
+        )
+    return redirect(url_for('assigned_dashboard'))
+
+@app.route('/faculty/complete/<int:complaint_id>', methods=['POST'])
+@faculty_required
+def faculty_complete_complaint(complaint_id):
+    note = request.form.get('completion_note', '').strip()
+    active_faculty_id = session.get('faculty_id')
+    complaint = execute_query(
+        'SELECT student_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s AND status NOT IN (%s, %s)',
+        (complaint_id, active_faculty_id, 'Closed', 'Resolved'),
+        fetchone=True
+    )
+
+    if complaint and note:
+        author_name = session.get('faculty_name', 'Assigned Officer')
+        execute_query(
+            'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
+            ('Completed - Awaiting Feedback', note[:500], complaint_id),
+            commit=True
+        )
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, author_name, 'Faculty', f"Official Resolution: {note[:500]}"),
+            commit=True
+        )
+        add_notification(
+            f"Officer {author_name} marked grievance #{complaint_id} completed. Please review remarks and submit feedback.",
+            complaint_id,
+            user_id=complaint['student_id']
+        )
+    return redirect(url_for('assigned_dashboard'))
+
+@app.route('/faculty/reassign/<int:complaint_id>', methods=['POST'])
+@faculty_required
+def faculty_reassign(complaint_id):
+    target_faculty_id = request.form.get('faculty_id')
+    active_faculty_id = session.get('faculty_id')
+    complaint = execute_query(
+        'SELECT id, student_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s AND status NOT IN (%s, %s)',
+        (complaint_id, active_faculty_id, 'Closed', 'Resolved'),
+        fetchone=True
+    )
+    target_faculty = execute_query('SELECT id, name, department FROM faculty WHERE id = %s', (target_faculty_id,), fetchone=True)
+
+    if complaint and target_faculty:
+        old_name = session.get('faculty_name', 'Assigned Officer')
+        execute_query(
+            'UPDATE complaints SET assigned_faculty_id = %s, predicted_department = %s WHERE id = %s',
+            (target_faculty['id'], target_faculty['department'], complaint_id),
+            commit=True
+        )
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, old_name, 'Faculty', f"Transferred job to {target_faculty['name']} ({target_faculty['department']} department)."),
+            commit=True
+        )
+        add_notification(
+            f"Grievance #{complaint_id} was transferred to {target_faculty['name']} ({target_faculty['department']}).",
+            complaint_id,
+            user_id=complaint['student_id'],
+            faculty_id=target_faculty['id']
+        )
+    return redirect(url_for('assigned_dashboard'))
+
+
+# ==============================================================================
+# MODULE 3: ADMIN VIEW (CENTRAL CAMPUS GOVERNANCE & TRIAGE HEADQUARTERS)
+# ==============================================================================
+
+@app.route('/admin')
+@admin_required
+def admin():
+    selected_dept = request.args.get('dept', 'all').strip()
+    selected_status = request.args.get('status', 'all').strip()
+
+    faculty_list = execute_query('SELECT id, name, department, email FROM faculty ORDER BY department ASC, name ASC', fetchall=True) or []
+    departments = sorted(list({f['department'] for f in faculty_list if f.get('department')}))
+
+    # Admin Exclusive: Faculty Active Workload Table
+    faculty_workloads = execute_query('''
+        SELECT f.id, f.name, f.department, f.email,
+               COUNT(CASE WHEN c.status NOT IN ('Closed', 'Resolved') THEN c.id END) AS active_load,
+               COUNT(c.id) AS total_handled
+        FROM faculty f
+        LEFT JOIN complaints c ON f.id = c.assigned_faculty_id
+        GROUP BY f.id, f.name, f.department, f.email
+        ORDER BY f.department ASC, active_load DESC
+    ''', fetchall=True) or []
+
+    query = '''
+        SELECT c.id, u.roll_number, u.name AS student_name, c.description, 
+               c.predicted_department, c.priority_level, c.status, c.created_at, 
+               c.completion_note, c.student_feedback, c.assigned_faculty_id,
+               f.name AS faculty_name, f.email AS faculty_email 
+        FROM complaints c 
+        LEFT JOIN users u ON c.student_id = u.id 
+        LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+    '''
+    conditions = []
+    params = []
+
+    if selected_dept and selected_dept != 'all':
+        conditions.append('c.predicted_department = %s')
+        params.append(selected_dept)
+
+    if selected_status and selected_status != 'all':
+        if selected_status == 'Closed':
+            conditions.append("c.status IN ('Closed', 'Resolved')")
+        else:
+            conditions.append('c.status = %s')
+            params.append(selected_status)
+
+    if conditions:
+        query += ' WHERE ' + ' AND '.join(conditions)
+
+    query += " ORDER BY CASE c.priority_level WHEN 'High Priority' THEN 0 ELSE 1 END, c.id DESC"
+    complaints = execute_query(query, tuple(params), fetchall=True) or []
+
+    if complaints:
+        ids = [c['id'] for c in complaints]
+        placeholders = ', '.join(['%s'] * len(ids))
+        all_comments = execute_query(
+            f'SELECT complaint_id, author_name, author_role, message, created_at FROM complaint_comments WHERE complaint_id IN ({placeholders}) ORDER BY id ASC',
+            tuple(ids),
+            fetchall=True
+        ) or []
+        comments_by_cid = {}
+        for cmt in all_comments:
+            comments_by_cid.setdefault(cmt['complaint_id'], []).append(cmt)
+        for comp in complaints:
+            comp['comments'] = comments_by_cid.get(comp['id'], [])
+
+    # System-wide Overall Campus Stats
+    all_complaints = execute_query("SELECT priority_level, status FROM complaints", fetchall=True) or []
+    stats = {
+        'total': len(all_complaints),
+        'high_priority': sum(x['priority_level'] == 'High Priority' for x in all_complaints),
+        'pending': sum(x['status'] == 'Pending' for x in all_complaints),
+        'in_progress': sum(x['status'] == 'In Progress' for x in all_complaints),
+        'awaiting_feedback': sum(x['status'] == 'Completed - Awaiting Feedback' for x in all_complaints),
+        'resolved': sum(x['status'] in ('Closed', 'Resolved') for x in all_complaints)
+    }
+
+    return render_template(
+        'admin_dashboard.html',
+        complaints=complaints,
+        stats=stats,
+        backend=get_backend_name(),
+        faculty_list=faculty_list,
+        faculty_workloads=faculty_workloads,
+        departments=departments,
+        selected_dept=selected_dept,
+        selected_status=selected_status,
+        admin_name=ADMIN_USERNAME
+    )
+
+@app.route('/admin/update-status/<int:complaint_id>', methods=['POST'])
+@admin_required
+def update_status(complaint_id):
+    status = request.form.get('status', '').strip()
+    complaint = execute_query('SELECT student_id FROM complaints WHERE id = %s', (complaint_id,), fetchone=True)
+    if complaint and status in VALID_STATUSES:
+        if status in ('Closed', 'Resolved'):
+            execute_query('UPDATE complaints SET status = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s', (status, complaint_id), commit=True)
+        else:
+            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Administrative status update: {status}"),
+            commit=True
+        )
+        add_notification(f'Grievance #{complaint_id} status changed to {status}.', complaint_id, user_id=complaint['student_id'])
+    return redirect(request.referrer or url_for('admin'))
+
+@app.route('/admin/comment/<int:complaint_id>', methods=['POST'])
+@admin_required
+def add_comment(complaint_id):
+    message = request.form.get('message', '').strip()
+    complaint = execute_query('SELECT student_id FROM complaints WHERE id = %s AND status NOT IN (%s, %s)', (complaint_id, 'Closed', 'Resolved'), fetchone=True)
+    if complaint and message:
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, f'Administrator ({ADMIN_USERNAME})', 'Admin', message[:500]),
+            commit=True
+        )
+        add_notification(f'Central Administrative update on grievance #{complaint_id}: {message[:120]}', complaint_id, user_id=complaint['student_id'])
+    return redirect(request.referrer or url_for('admin'))
+
+@app.route('/admin/complete/<int:complaint_id>', methods=['POST'])
+@admin_required
+def complete_complaint(complaint_id):
+    note = request.form.get('completion_note', '').strip()
+    complaint = execute_query('SELECT student_id FROM complaints WHERE id = %s AND status NOT IN (%s, %s)', (complaint_id, 'Closed', 'Resolved'), fetchone=True)
+    if complaint and note:
+        execute_query(
+            'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
+            ('Completed - Awaiting Feedback', note[:500], complaint_id),
+            commit=True
+        )
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, f'Administrator ({ADMIN_USERNAME})', 'Admin', f"Administrative Resolution: {note[:500]}"),
+            commit=True
+        )
+        add_notification(
+            f'Grievance #{complaint_id} was marked completed by University Admin. Please review the note and submit feedback.',
+            complaint_id,
+            user_id=complaint['student_id']
+        )
+    return redirect(request.referrer or url_for('admin'))
+
+@app.route('/admin/reassign/<int:complaint_id>', methods=['POST'])
+@admin_required
+def reassign_complaint(complaint_id):
+    faculty_id = request.form.get('faculty_id')
+    complaint = execute_query('SELECT id, student_id, predicted_department FROM complaints WHERE id = %s AND status NOT IN (%s, %s)', (complaint_id, 'Closed', 'Resolved'), fetchone=True)
+    faculty = execute_query('SELECT id, name, department FROM faculty WHERE id = %s', (faculty_id,), fetchone=True)
+    if complaint and faculty:
+        execute_query(
+            'UPDATE complaints SET assigned_faculty_id = %s, predicted_department = %s WHERE id = %s',
+            (faculty['id'], faculty['department'], complaint_id),
+            commit=True
+        )
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Re-routed by Central Admin to {faculty['name']} ({faculty['department']})."),
+            commit=True
+        )
+        add_notification(
+            f"Grievance #{complaint_id} has been re-assigned to {faculty['name']} ({faculty['department']}).",
+            complaint_id,
+            user_id=complaint['student_id'],
+            faculty_id=faculty['id']
+        )
+    return redirect(request.referrer or url_for('admin'))
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5000))
-    debug = os.getenv('FLASK_DEBUG', 'True').lower() in ('true', '1', 'yes')
-    print(f"\n========================================================")
-    print(f"  Smart Grievance Routing AI Server")
-    print(f"  Running on: http://127.0.0.1:{port}")
-    print(f"  Admin View: http://127.0.0.1:{port}/admin")
-    print(f"========================================================\n")
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    app.run(
+        host='127.0.0.1',
+        port=int(os.getenv('PORT', 5000)),
+        debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true',
+        threaded=True
+    )
