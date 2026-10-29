@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Access · Student Grievance System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body class="lpu-auth-wrapper">
+    <main class="lpu-auth-card">
+        <div class="lpu-auth-header">
+            <div class="d-inline-flex align-items-center justify-content-center p-2 rounded-circle bg-white shadow-sm mb-2">
+                <i class="bi bi-shield-lock-fill fs-2 text-danger"></i>
+            </div>
+            <h4 class="fw-bold mb-0" style="color: var(--lpu-navy);">LOVELY PROFESSIONAL UNIVERSITY</h4>
+            <div class="text-muted small fw-semibold text-uppercase tracking-wider">
+                Student Grievance System
+            </div>
+            <span class="badge bg-danger text-white mt-2 fw-bold">Admin & Department Faculty Desk</span>
+        </div>
+
+        <div class="lpu-auth-body">
+            {% if error %}
+            <div class="alert alert-danger py-2 px-3 small rounded-2 mb-3 d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill me-2 flex-shrink-0"></i>
+                <div>{{ error }}</div>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/admin/login">
+                <div class="mb-3">
+                    <label class="form-label text-dark fw-bold small">
+                        Officer / Admin Username <span class="text-danger">*</span>
+                    </label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light text-muted border-end-0">
+                            <i class="bi bi-person"></i>
+                        </span>
+                        <input 
+                            name="username" 
+                            id="adminUser"
+                            type="text" 
+                            class="form-control border-start-0 ps-0" 
+                            required 
+                            placeholder="Enter admin username" 
+                            autofocus
+                        >
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label text-dark fw-bold small">
+                        Security Password <span class="text-danger">*</span>
+                    </label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light text-muted border-end-0">
+                            <i class="bi bi-key"></i>
+                        </span>
+                        <input 
+                            name="password" 
+                            id="adminPass"
+                            type="password" 
+                            class="form-control border-start-0 ps-0" 
+                            required 
+                            placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"
+                        >
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-lpu-primary w-100 py-2 fw-bold">
+                    <i class="bi bi-shield-check me-1"></i> Sign In to Admin Console
+                </button>
+            </form>
+
+            <div class="row g-2 mt-4 pt-3 border-top text-center">
+                <div class="col-6">
+                    <a href="{{ url_for('student_login') }}" class="btn btn-sm btn-outline-secondary w-100 py-2 fw-semibold text-truncate">
+                        <i class="bi bi-mortarboard-fill me-1 text-warning"></i> Student Portal
+                    </a>
+                </div>
+                <div class="col-6">
+                    <a href="{{ url_for('assigned_dashboard') }}" class="btn btn-sm btn-outline-success w-100 py-2 fw-semibold text-truncate">
+                        <i class="bi bi-person-workspace me-1"></i> Assigned Desk
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
