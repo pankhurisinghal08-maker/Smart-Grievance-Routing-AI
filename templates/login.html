@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>University Portal Login · Lovely Professional University (Student Grievance System)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body class="lpu-auth-wrapper">
+    <main class="lpu-auth-card">
+        <!-- Official University Header with LPU Logo -->
+        <div class="lpu-auth-header">
+            <div class="mb-2 text-center">
+                <img src="{{ url_for('static', filename='images/lpu_logo.png') }}" alt="Lovely Professional University Logo" class="lpu-logo-img">
+            </div>
+            <h4 class="fw-bold mb-0" style="color: var(--lpu-navy); letter-spacing: -0.02em;">LOVELY PROFESSIONAL UNIVERSITY</h4>
+            <div class="text-muted small fw-bold text-uppercase tracking-wider mt-1">
+                Student Grievance System
+            </div>
+            <div class="badge bg-light text-secondary border px-3 py-1 mt-2 font-monospace small">
+                Grievance &amp; Service Gateway
+            </div>
+        </div>
+
+        <div class="lpu-auth-body">
+            <!-- Flash & Error Alert Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category if category != 'error' else 'danger' }} py-2 px-3 small rounded-2 mb-3 d-flex align-items-center">
+                        <i class="bi bi-info-circle-fill me-2 flex-shrink-0"></i>
+                        <div>{{ message }}</div>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% if error %}
+            <div class="alert alert-danger py-2 px-3 small rounded-2 mb-3 d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill me-2 flex-shrink-0"></i>
+                <div>{{ error }}</div>
+            </div>
+            {% endif %}
+
+            <!-- ==========================================================
+                 UNIFIED ROLE SWITCHER NAVIGATION (USER, ASSIGNED, ADMIN)
+                 ========================================================== -->
+            <nav class="portal-role-nav" aria-label="Select Access Role">
+                <button type="button" class="portal-role-btn role-student {% if active_tab == 'student' %}active{% endif %}" id="tabBtnStudent" data-tab="student">
+                    <i class="bi bi-mortarboard-fill"></i>
+                    <span>Student View</span>
+                </button>
+                <button type="button" class="portal-role-btn role-faculty {% if active_tab == 'faculty' %}active{% endif %}" id="tabBtnFaculty" data-tab="faculty">
+                    <i class="bi bi-person-workspace"></i>
+                    <span>Assigned Desk</span>
+                </button>
+                <button type="button" class="portal-role-btn role-admin {% if active_tab == 'admin' %}active{% endif %}" id="tabBtnAdmin" data-tab="admin">
+                    <i class="bi bi-shield-lock-fill"></i>
+                    <span>Admin View</span>
+                </button>
+            </nav>
+
+            <!-- ==========================================================
+                 PANEL 1: USER VIEW (STUDENT PORTAL LOGIN)
+                 ========================================================== -->
+            <section id="panelStudent" class="portal-tab-panel {% if active_tab != 'student' %}d-none{% endif %}">
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                    <div>
+                        <h6 class="fw-bold mb-0 text-dark">
+                            <i class="bi bi-person-badge text-warning me-1"></i> Student Service Access
+                        </h6>
+                        <small class="text-muted">Lodge grievances and track resolution status</small>
+                    </div>
+                    <span class="badge bg-warning text-dark fw-bold">User View</span>
+                </div>
+
+                <form method="POST" action="/login">
+                    <input type="hidden" name="role_type" value="student">
+                    <div class="mb-3">
+                        <label class="form-label text-dark fw-bold small">
+                            Student Registration / Roll Number <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted border-end-0">
+                                <i class="bi bi-person-badge"></i>
+                            </span>
+                            <input 
+                                name="roll_number" 
+                                id="rollInput"
+                                type="text" 
+                                class="form-control border-start-0 ps-0" 
+                                required 
+                                placeholder="Enter registered roll number" 
+                                autofocus
+                            >
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-lpu-orange w-100 py-2 fw-bold shadow-sm">
+                        <i class="bi bi-box-arrow-in-right me-1"></i> Access Student Portal
+                    </button>
+                </form>
+            </section>
+
+            <!-- ==========================================================
+                 PANEL 2: ASSIGNED TASK ROLES (FACULTY OPERATIONS DESK)
+                 ========================================================== -->
+            <section id="panelFaculty" class="portal-tab-panel {% if active_tab != 'faculty' %}d-none{% endif %}">
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                    <div>
+                        <h6 class="fw-bold mb-0" style="color: #065f46;">
+                            <i class="bi bi-person-workspace me-1"></i> Assigned Task Desk
+                        </h6>
+                        <small class="text-muted">Departmental faculty &amp; resolution staff operations</small>
+                    </div>
+                    <span class="badge text-white fw-bold" style="background: #059669;">Assigned Roles</span>
+                </div>
+
+                <form method="POST" action="/login">
+                    <input type="hidden" name="role_type" value="faculty">
+                    
+                    <div class="mb-3">
+                        <label class="form-label text-dark fw-bold small">
+                            Select Assigned Officer / Department Desk <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted border-end-0">
+                                <i class="bi bi-person-lines-fill"></i>
+                            </span>
+                            <select name="faculty_id" id="facultySelect" class="form-select border-start-0 ps-0">
+                                <option value="" disabled>-- Select Your Officer Profile --</option>
+                                {% for fac in faculty_list %}
+                                <option value="{{ fac.id }}" {% if fac.id == 1 %}selected{% endif %}>
+                                    {{ fac.name }} &middot; {{ fac.department }} Desk ({{ fac.email }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-muted fw-bold small text-uppercase" style="font-size: 0.72rem;">
+                            Or Enter Email / Department:
+                        </label>
+                        <input 
+                            name="identifier" 
+                            type="text" 
+                            class="form-control form-control-sm" 
+                            placeholder="e.g. parth.singhal@college.edu or IT"
+                        >
+                    </div>
+
+                    <button type="submit" class="btn btn-success w-100 py-2 fw-bold shadow-sm" style="background: #059669; border-color: #059669;">
+                        <i class="bi bi-shield-check me-1"></i> Open Assigned Operations Desk
+                    </button>
+                </form>
+            </section>
+
+            <!-- ==========================================================
+                 PANEL 3: ADMIN VIEW (CENTRAL ADMINISTRATIVE CONSOLE)
+                 ========================================================== -->
+            <section id="panelAdmin" class="portal-tab-panel {% if active_tab != 'admin' %}d-none{% endif %}">
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                    <div>
+                        <h6 class="fw-bold mb-0 text-danger">
+                            <i class="bi bi-shield-lock-fill me-1"></i> Central Admin Console
+                        </h6>
+                        <small class="text-muted">University governance, triage oversight &amp; analytics</small>
+                    </div>
+                    <span class="badge bg-danger text-white fw-bold">Admin View</span>
+                </div>
+
+                <form method="POST" action="/login">
+                    <input type="hidden" name="role_type" value="admin">
+                    <div class="mb-3">
+                        <label class="form-label text-dark fw-bold small">
+                            Administrator Username <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted border-end-0">
+                                <i class="bi bi-person-fill-lock"></i>
+                            </span>
+                            <input 
+                                name="username" 
+                                id="adminUser"
+                                type="text" 
+                                class="form-control border-start-0 ps-0" 
+                                required 
+                                value="Pankhuri"
+                                placeholder="Pankhuri"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label text-dark fw-bold small">
+                            Security Password <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted border-end-0">
+                                <i class="bi bi-key-fill"></i>
+                            </span>
+                            <input 
+                                name="password" 
+                                id="adminPass"
+                                type="password" 
+                                class="form-control border-start-0 ps-0" 
+                                required 
+                                placeholder="Enter admin password"
+                            >
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-lpu-primary w-100 py-2 fw-bold shadow-sm">
+                        <i class="bi bi-lock-fill me-1"></i> Sign In to Admin Console
+                    </button>
+                </form>
+            </section>
+        </div>
+    </main>
+
+    <!-- Client-side Tab Switcher Script -->
+    <script>
+        function switchRoleTab(tabName) {
+            // Update Tab buttons
+            document.querySelectorAll('.portal-role-btn').forEach(btn => btn.classList.remove('active'));
+            // Hide all tab panels
+            document.querySelectorAll('.portal-tab-panel').forEach(panel => panel.classList.add('d-none'));
+
+            if (tabName === 'faculty') {
+                document.getElementById('tabBtnFaculty')?.classList.add('active');
+                document.getElementById('panelFaculty')?.classList.remove('d-none');
+            } else if (tabName === 'admin') {
+                document.getElementById('tabBtnAdmin')?.classList.add('active');
+                document.getElementById('panelAdmin')?.classList.remove('d-none');
+            } else {
+                document.getElementById('tabBtnStudent')?.classList.add('active');
+                document.getElementById('panelStudent')?.classList.remove('d-none');
+            }
+
+            // Sync URL parameter cleanly
+            const url = new URL(window.location);
+            url.searchParams.set('tab', tabName);
+            window.history.replaceState({}, '', url);
+        }
+
+        document.getElementById('tabBtnStudent')?.addEventListener('click', () => switchRoleTab('student'));
+        document.getElementById('tabBtnFaculty')?.addEventListener('click', () => switchRoleTab('faculty'));
+        document.getElementById('tabBtnAdmin')?.addEventListener('click', () => switchRoleTab('admin'));
+    </script>
+</body>
+</html>
