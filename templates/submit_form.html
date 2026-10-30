@@ -3,127 +3,531 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Submit Grievance | Smart AI Routing</title>
+    <title>Student Grievance System · Lovely Professional University</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
 </head>
 <body>
-    <!-- Navigation Bar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark bg-opacity-75 shadow-sm mb-4">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="/">
-                <i class="bi bi-robot me-1"></i> Smart Grievance AI
-            </a>
-            <div class="d-flex align-items-center">
-                <a href="/" class="btn btn-sm btn-outline-light me-2 active">
-                    <i class="bi bi-pencil-square"></i> Student Form
-                </a>
-                <a href="/admin" class="btn btn-sm btn-light me-3">
-                    <i class="bi bi-speedometer2"></i> Admin Dashboard
-                </a>
-                <span class="badge bg-secondary text-uppercase" title="Active database engine">
-                    <i class="bi bi-database"></i> {{ backend if backend else 'DB' }}
+    <!-- Top University Bar (LPU Student Grievance Header) -->
+    <header class="lpu-top-bar py-2 px-3">
+        <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="rms-badge">SGS</span>
+                    <div>
+                        <div class="lpu-brand-title">
+                            <img src="{{ url_for('static', filename='images/lpu_logo.png') }}" alt="LPU Logo" class="lpu-top-logo me-2"> LOVELY PROFESSIONAL UNIVERSITY
+                        </div>
+                        <div class="lpu-brand-subtitle">Student Grievance System &middot; Grievance Redressal Cell</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="user-profile-chip">
+                    <i class="bi bi-person-circle text-warning"></i>
+                    <span><strong>{{ student.name }}</strong> (Reg: {{ student.roll_number }})</span>
+                </div>
+                <span class="badge bg-dark bg-opacity-50 text-white-50 border border-secondary border-opacity-50 small">
+                    <i class="bi bi-database text-info"></i> {{ backend|upper }}
                 </span>
+                <a href="/logout" class="btn btn-sm btn-danger py-1 px-3 shadow-sm">
+                    <i class="bi bi-box-arrow-right me-1"></i> Logout
+                </a>
             </div>
         </div>
-    </nav>
+    </header>
 
-    <div class="container pb-5" style="max-width: 650px;">
-        <h2 class="mb-4 text-center text-white fw-bold">
-            <i class="bi bi-shield-check me-1"></i> Student Grievance Portal
-        </h2>
+    <!-- Sub-header Breadcrumb Bar -->
+    <div class="lpu-sub-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h4 class="mb-0 fw-bold" style="color: var(--lpu-navy);">
+                        <i class="bi bi-headset me-2" style="color: var(--lpu-orange);"></i>Student Relationship & Grievance Portal
+                    </h4>
+                    <small class="text-muted">Automated AI natural language routing &middot; Dedicated faculty departmental assignment</small>
+                </div>
+                <div>
+                    <span class="badge bg-light text-dark border py-2 px-3">
+                        <i class="bi bi-shield-check text-success me-1"></i> Active Session: Regular Student Portal
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        <!-- Result / Notification Alerts -->
-        {% if result %}
-            {% if result.success %}
-                <div class="alert alert-success shadow-sm mb-4 rounded-3 p-4">
-                    <div class="d-flex align-items-center mb-3">
-                        <i class="bi bi-check-circle-fill fs-3 text-success me-2"></i>
+    <main class="container pb-5">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category if category != 'error' else 'danger' }} py-2 px-3 small rounded-2 mb-3 d-flex align-items-center">
+                    <i class="bi bi-exclamation-circle-fill me-2 flex-shrink-0"></i>
+                    <div>{{ message }}</div>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- System Alert Messages -->
+        {% if request.args.get('error') %}
+        <div class="alert alert-danger bg-danger bg-opacity-10 border-danger border-opacity-25 text-danger rounded-2 mb-3 d-flex align-items-center">
+            <i class="bi bi-exclamation-octagon-fill fs-5 me-2"></i>
+            <div>{{ request.args.get('error') }}</div>
+        </div>
+        {% endif %}
+
+        <!-- ==================================================================
+             NAVIGATION BUTTONS (USER REQUIREMENT: BUTTONS ONLY NAVIGATION)
+             ================================================================== -->
+        <nav class="rms-nav-tabs" aria-label="RMS Modules">
+            <button type="button" class="rms-tab-btn {% if active_tab == 'request' %}active{% endif %}" id="btnTabRequest" data-target="viewRequest">
+                <i class="bi bi-pencil-square text-warning"></i>
+                <span>Log Request (Lodge Grievance)</span>
+            </button>
+            <button type="button" class="rms-tab-btn {% if active_tab == 'status' %}active{% endif %}" id="btnTabStatus" data-target="viewStatus">
+                <i class="bi bi-card-checklist text-info"></i>
+                <span>Log Status (Previous Complaints)</span>
+                <span class="tab-counter">{{ history|length }}</span>
+            </button>
+            <button type="button" class="rms-tab-btn {% if active_tab == 'notifications' %}active{% endif %}" id="btnTabNotifications" data-target="viewNotifications">
+                <i class="bi bi-bell-fill text-danger"></i>
+                <span>Notifications & Alerts</span>
+                <span class="tab-counter">{{ alerts|length }}</span>
+            </button>
+        </nav>
+
+        <!-- ==================================================================
+             MODULE 1: LOG REQUEST (GRIEVANCE LODGING & AI RESULT)
+             ================================================================== -->
+        <section id="viewRequest" class="rms-tab-view {% if active_tab != 'request' %}d-none{% endif %}">
+            <!-- AI Classification Result Banner (Shown if submitted) -->
+            {% if result %}
+            <div class="lpu-ai-banner">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pb-2 mb-2 border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-check-circle-fill fs-3 text-success"></i>
                         <div>
-                            <h5 class="mb-0 fw-bold">Grievance Submitted Successfully!</h5>
-                            <small class="text-muted">Student: {{ result.student_name }} (Roll No: {{ result.roll_number }})</small>
+                            <h5 class="fw-bold mb-0" style="color: var(--lpu-navy);">
+                                Grievance Ticket #{{ result.id }} Successfully Registered & Routed
+                            </h5>
+                            <small class="text-muted">Automated Department Routing & Urgent Triage Complete</small>
                         </div>
                     </div>
-                    <hr>
-                    <div class="row g-2 text-center my-2">
-                        <div class="col-6">
-                            <div class="p-2 bg-white rounded border">
-                                <small class="text-muted d-block">AI Routed Department</small>
-                                <span class="badge bg-primary fs-6 mt-1">{{ result.department }}</span>
-                            </div>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-lpu-primary" onclick="switchToTab('status')">
+                            <i class="bi bi-eye me-1"></i> View in Log Status
+                        </button>
+                    </div>
+                </div>
+
+                <div class="row g-3 my-2">
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light rounded border h-100">
+                            <small class="text-muted fw-bold d-block text-uppercase" style="font-size: 0.72rem;">AI Assigned Department</small>
+                            <span class="lpu-badge-dept fs-6 mt-1">
+                                {% if result.department == 'IT' %}<i class="bi bi-laptop"></i>
+                                {% elif result.department == 'Maintenance' %}<i class="bi bi-tools"></i>
+                                {% elif result.department == 'Cafeteria' %}<i class="bi bi-cup-hot"></i>
+                                {% elif result.department == 'Security' %}<i class="bi bi-shield-shaded"></i>
+                                {% elif result.department == 'Finance' %}<i class="bi bi-cash-stack"></i>
+                                {% elif result.department == 'Library' %}<i class="bi bi-book"></i>
+                                {% elif result.department == 'Discipline' %}<i class="bi bi-award"></i>
+                                {% elif result.department == 'Examination' %}<i class="bi bi-journal-check"></i>
+                                {% else %}<i class="bi bi-building"></i>
+                                {% endif %}
+                                {{ result.department }}
+                            </span>
                         </div>
-                        <div class="col-6">
-                            <div class="p-2 bg-white rounded border">
-                                <small class="text-muted d-block">Priority Assessment</small>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light rounded border h-100">
+                            <small class="text-muted fw-bold d-block text-uppercase" style="font-size: 0.72rem;">Assessed Priority Level</small>
+                            <div class="mt-1">
                                 {% if result.priority == 'High Priority' %}
-                                    <span class="badge bg-danger fs-6 mt-1">
-                                        <i class="bi bi-exclamation-triangle-fill"></i> High Priority
-                                    </span>
+                                <span class="lpu-badge-high fs-6">
+                                    <i class="bi bi-exclamation-triangle-fill"></i> High Priority (Urgent)
+                                </span>
                                 {% else %}
-                                    <span class="badge bg-success fs-6 mt-1">Normal</span>
+                                <span class="lpu-badge-normal fs-6">
+                                    <i class="bi bi-check2"></i> Normal Priority
+                                </span>
                                 {% endif %}
                             </div>
                         </div>
                     </div>
-                    <div class="d-flex gap-2 mt-3">
-                        <a href="/" class="btn btn-sm btn-outline-success flex-grow-1">Submit Another Grievance</a>
-                        <a href="/admin" class="btn btn-sm btn-success flex-grow-1">View on Admin Dashboard</a>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light rounded border h-100">
+                            <small class="text-muted fw-bold d-block text-uppercase" style="font-size: 0.72rem;">Assigned Faculty Authority</small>
+                            <div class="fw-bold mt-1 text-dark" style="font-size: 0.95rem;">{{ result.faculty_name }}</div>
+                            <small class="text-muted"><i class="bi bi-envelope me-1"></i>{{ result.faculty_email }}</small>
+                        </div>
                     </div>
                 </div>
-            {% else %}
-                <div class="alert alert-danger shadow-sm mb-4 rounded-3 d-flex align-items-center">
-                    <i class="bi bi-exclamation-octagon-fill fs-4 me-3 flex-shrink-0"></i>
-                    <div>
-                        <strong>Submission Error:</strong> {{ result.message }}
-                    </div>
+
+                <div class="alert alert-secondary py-2 px-3 small mt-2 mb-0 border">
+                    <strong>Issue Summary:</strong> {{ result.description }}
                 </div>
+            </div>
             {% endif %}
-        {% endif %}
 
-        <!-- Grievance Submission Form -->
-        <form action="/submit" method="POST" class="form-container">
-            <div class="mb-3">
-                <label class="form-label fw-semibold">
-                    <i class="bi bi-person-badge me-1"></i> Your Roll Number
-                </label>
-                <input 
-                    type="text" 
-                    name="roll_number" 
-                    class="form-control" 
-                    placeholder="e.g. 123456" 
-                    value="{{ result.roll_number if result and not result.success else '' }}"
-                    required
-                >
-                <div class="form-text mt-1 text-muted">
-                    <i class="bi bi-info-circle"></i> Test Student Roll Number in database is: <strong>123456</strong>
+            <!-- Grievance Submission Form -->
+            <div class="rms-card">
+                <div class="rms-card-header">
+                    <h5 class="rms-card-title">
+                        <i class="bi bi-file-earmark-plus-fill" style="color: var(--lpu-orange);"></i>
+                        Raise New Grievance / Query
+                    </h5>
+                    <span class="badge bg-secondary text-uppercase small">Step 1 of 1</span>
+                </div>
+                <div class="rms-card-body">
+                    <!-- Quick Reference Prompt Helpers -->
+                    <div class="mb-3">
+                        <label class="form-label text-muted fw-bold small text-uppercase mb-2">
+                            <i class="bi bi-lightning-charge-fill text-warning me-1"></i>
+                            Quick sample topics (click to fill form):
+                        </label>
+                        <div class="d-flex flex-wrap gap-2">
+                            <span class="lpu-chip" data-prompt="Water is leaking heavily from the washroom pipe outside Block B classroom 204.">
+                                <i class="bi bi-tools text-primary"></i> Maintenance: Water Leak
+                            </span>
+                            <span class="lpu-chip" data-prompt="The student portal shows an internal error while downloading fee receipts.">
+                                <i class="bi bi-laptop text-info"></i> IT: Fee Receipt Download Error
+                            </span>
+                            <span class="lpu-chip" data-prompt="Emergency: Fire sparks and smoke coming from electrical switchboard in Block 34!">
+                                <i class="bi bi-fire text-danger"></i> Emergency: Electrical Sparks
+                            </span>
+                            <span class="lpu-chip" data-prompt="The library catalogue shows a returned textbook as overdue with pending fine.">
+                                <i class="bi bi-book text-warning"></i> Library: Book Overdue Fine
+                            </span>
+                            <span class="lpu-chip" data-prompt="The cafeteria lunch counter charged twice after the QR payment appeared to fail.">
+                                <i class="bi bi-cup-hot text-success"></i> Cafeteria: Payment Charged Twice
+                            </span>
+                        </div>
+                    </div>
+
+                    <form action="/submit" method="POST" id="grievanceForm">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-dark">
+                                Problem Description / Grievance Details <span class="text-danger">*</span>
+                            </label>
+                            <textarea 
+                                name="description" 
+                                id="description"
+                                class="form-control lpu-form-control" 
+                                rows="5" 
+                                maxlength="500"
+                                placeholder="Describe your problem or request in detail. The system AI will classify the appropriate department and evaluate urgency automatically..." 
+                                required
+                            ></textarea>
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <small id="char-count" class="text-muted fw-semibold">500 character(s) left</small>
+                                <small class="text-muted">Maximum limit: 500 characters</small>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-light rounded border mb-4">
+                            <div class="d-flex align-items-center gap-2 small text-muted">
+                                <i class="bi bi-info-circle-fill text-primary fs-5"></i>
+                                <div>
+                                    Your request will be registered under a unique <strong>Grievance Ticket ID</strong>, evaluated by our NLP engine, and assigned to the faculty member heading that department.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="reset" class="btn btn-outline-secondary px-4 fw-semibold">
+                                Clear
+                            </button>
+                            <button type="submit" class="btn btn-lpu-orange px-4 fw-bold">
+                                <i class="bi bi-send-fill me-1"></i> Submit Grievance
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
+        </section>
 
-            <div class="mb-3">
-                <label class="form-label fw-semibold">
-                    <i class="bi bi-card-text me-1"></i> Describe your problem
-                </label>
-                <textarea 
-                    name="description" 
-                    class="form-control" 
-                    rows="5" 
-                    maxlength="500"
-                    placeholder="Describe your issue in detail. The AI will automatically route it to the right department (IT, Maintenance, Cafeteria, Library, Finance, Security, Discipline)..." 
-                    required
-                >{{ result.description if result and not result.success else '' }}</textarea>
-                <div class="d-flex justify-content-between mt-1">
-                    <small id="char-count" class="text-muted">500 character(s) left</small>
-                    <small class="text-muted">Max 500 characters</small>
+        <!-- ==================================================================
+             MODULE 2: LOG STATUS (PREVIOUS COMPLAINTS & CASE HISTORY)
+             ================================================================== -->
+        <section id="viewStatus" class="rms-tab-view {% if active_tab != 'status' %}d-none{% endif %}">
+            <div class="rms-card">
+                <div class="rms-card-header">
+                    <h5 class="rms-card-title">
+                        <i class="bi bi-clock-history" style="color: var(--lpu-navy);"></i>
+                        Registered Grievances & History ({{ history|length }})
+                    </h5>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.location.reload();">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Refresh Status
+                    </button>
+                </div>
+
+                <div class="rms-card-body">
+                    <!-- Search & Filter Controls -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-7">
+                            <div class="input-group">
+                                <span class="input-group-text bg-white border-end-0">
+                                    <i class="bi bi-search text-muted"></i>
+                                </span>
+                                <input type="text" id="statusFilterInput" class="form-control border-start-0 ps-0" placeholder="Filter by Ticket ID, department, or keyword...">
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="d-flex gap-1 justify-content-md-end flex-wrap">
+                                <button type="button" class="btn btn-sm btn-outline-dark active filter-status-pill" data-status="all">All</button>
+                                <button type="button" class="btn btn-sm btn-outline-warning filter-status-pill" data-status="pending">Pending</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary filter-status-pill" data-status="in progress">In Progress</button>
+                                <button type="button" class="btn btn-sm btn-outline-purple filter-status-pill" data-status="awaiting" style="color: #7e22ce; border-color: #d8b4fe;">Awaiting</button>
+                                <button type="button" class="btn btn-sm btn-outline-success filter-status-pill" data-status="closed">Closed</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Complaint List Items -->
+                    {% for item in history %}
+                    <div class="rms-ticket-item complaint-item-card" data-card-status="{{ item.status|lower }}">
+                        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap pb-2 border-bottom mb-2">
+                            <div>
+                                <span class="rms-ticket-id">Grievance Ticket #{{ item.id }}</span>
+                                <span class="lpu-badge-dept ms-2">{{ item.predicted_department }}</span>
+                                {% if item.priority_level == 'High Priority' %}
+                                <span class="lpu-badge-high ms-1">
+                                    <i class="bi bi-exclamation-triangle-fill"></i> High Priority
+                                </span>
+                                {% else %}
+                                <span class="lpu-badge-normal ms-1">Normal</span>
+                                {% endif %}
+                            </div>
+                            <div>
+                                {% if item.status == 'Closed' or item.status == 'Resolved' %}
+                                <span class="lpu-badge-closed"><i class="bi bi-check2-all me-1"></i> Closed</span>
+                                {% elif item.status == 'Completed - Awaiting Feedback' %}
+                                <span class="lpu-badge-awaiting"><i class="bi bi-patch-question me-1"></i> Completed - Awaiting Feedback</span>
+                                {% elif item.status == 'In Progress' %}
+                                <span class="lpu-badge-progress"><i class="bi bi-hourglass-split me-1"></i> In Progress</span>
+                                {% else %}
+                                <span class="lpu-badge-pending"><i class="bi bi-clock me-1"></i> Pending</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <p class="mb-2 text-dark fs-6">{{ item.description }}</p>
+
+                        <div class="small text-muted mb-2 d-flex flex-wrap gap-3">
+                            <span><i class="bi bi-person-badge text-secondary me-1"></i> Assigned Officer: <strong>{{ item.faculty_name or 'Department Faculty Desk' }}</strong></span>
+                            <span><i class="bi bi-calendar3 text-secondary me-1"></i> Registered: {{ item.created_at }}</span>
+                            {% if item.closed_at %}
+                            <span><i class="bi bi-check-circle text-success me-1"></i> Closed: {{ item.closed_at }}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Completion Note Display -->
+                        {% if item.completion_note %}
+                        <div class="alert alert-success py-2 px-3 small rounded-2 mb-2 border border-success border-opacity-25" style="background: #f0fdf4;">
+                            <strong class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Official Resolution Remarks:</strong>
+                            <div class="mt-1 text-dark">{{ item.completion_note }}</div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Final Feedback Display -->
+                        {% if item.student_feedback %}
+                        <div class="alert alert-info py-2 px-3 small rounded-2 mb-2 border border-info border-opacity-25" style="background: #f0f9ff;">
+                            <strong class="text-primary"><i class="bi bi-chat-heart-fill me-1"></i> Student Resolution Feedback:</strong>
+                            <div class="mt-1 text-dark">{{ item.student_feedback }}</div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Remarks & Correspondence Thread -->
+                        {% if item.comments %}
+                        <div class="rms-thread-box">
+                            <small class="text-muted fw-bold text-uppercase d-block mb-2" style="font-size: 0.75rem;">
+                                <i class="bi bi-chat-square-text-fill me-1"></i> Case Discussion & Remarks
+                            </small>
+                            {% for c in item.comments %}
+                            <div class="rms-thread-msg {% if c.author_role == 'Faculty' %}faculty-msg{% elif c.author_role == 'Admin' %}admin-msg{% else %}student-msg{% endif %}">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <strong class="{% if c.author_role == 'Faculty' %}text-success{% elif c.author_role == 'Admin' %}text-primary{% else %}text-danger{% endif %} small">
+                                        {% if c.author_role == 'Faculty' %}<i class="bi bi-person-badge-fill me-1"></i>{% elif c.author_role == 'Admin' %}<i class="bi bi-shield-fill me-1"></i>{% endif %}
+                                        {{ c.author_name }} ({{ c.author_role }})
+                                    </strong>
+                                    <small class="text-muted" style="font-size: 0.72rem;">{{ c.created_at }}</small>
+                                </div>
+                                <div class="text-dark small">{{ c.message }}</div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <!-- Reply Box for Active Tickets -->
+                        {% if item.status != 'Closed' and item.status != 'Resolved' %}
+                        <div class="mt-2 pt-2 border-top">
+                            <form action="{{ url_for('student_add_comment', complaint_id=item.id) }}" method="POST" class="d-flex gap-2">
+                                <input name="message" required maxlength="500" class="form-control form-control-sm" placeholder="Send follow-up query / reply to faculty officer...">
+                                <button type="submit" class="btn btn-sm btn-lpu-primary text-nowrap">
+                                    <i class="bi bi-reply me-1"></i> Reply
+                                </button>
+                            </form>
+                        </div>
+                        {% endif %}
+
+                        <!-- Feedback & Case Closure (When Completed) -->
+                        {% if item.status == 'Completed - Awaiting Feedback' %}
+                        <div class="mt-3 p-3 rounded-2 border border-success border-opacity-50" style="background: #f0fdf4;">
+                            <h6 class="fw-bold text-success mb-1">
+                                <i class="bi bi-star-fill text-warning me-1"></i> Resolution Satisfaction Sign-off
+                            </h6>
+                            <p class="small text-muted mb-2">The department has addressed this ticket. Please state whether the resolution was satisfactory to complete closure.</p>
+                            <form action="{{ url_for('submit_feedback', complaint_id=item.id) }}" method="POST">
+                                <div class="input-group">
+                                    <input name="feedback" required maxlength="500" class="form-control form-control-sm" placeholder="Enter your remarks (e.g., Issue resolved satisfactorily, thank you)...">
+                                    <button type="submit" class="btn btn-sm btn-success fw-bold">
+                                        <i class="bi bi-check2-circle me-1"></i> Submit & Close Ticket
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-folder-x fs-1 text-muted d-block mb-2"></i>
+                        <h6 class="text-muted">No complaints logged yet.</h6>
+                        <button type="button" class="btn btn-sm btn-lpu-orange mt-2" onclick="switchToTab('request')">
+                            <i class="bi bi-plus-circle me-1"></i> Log your first request
+                        </button>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
+        </section>
 
-            <button type="submit" class="btn btn-orange w-100 py-2 fs-6 fw-bold shadow-sm">
-                <i class="bi bi-send-fill me-1"></i> Submit Grievance
-            </button>
-        </form>
-    </div>
+        <!-- ==================================================================
+             MODULE 3: NOTIFICATIONS & ALERTS
+             ================================================================== -->
+        <section id="viewNotifications" class="rms-tab-view {% if active_tab != 'notifications' %}d-none{% endif %}">
+            <div class="rms-card">
+                <div class="rms-card-header">
+                    <h5 class="rms-card-title">
+                        <i class="bi bi-bell-fill text-danger"></i>
+                        Grievance Activity & Status Notifications ({{ alerts|length }})
+                    </h5>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.location.reload();">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+                    </button>
+                </div>
+                <div class="rms-card-body">
+                    {% if alerts %}
+                    <div class="list-group list-group-flush">
+                        {% for alert in alerts %}
+                        <div class="list-group-item px-0 py-3 border-bottom d-flex align-items-start gap-3">
+                            <div class="p-2 rounded bg-light border text-primary">
+                                <i class="bi bi-bell-fill"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="text-dark fw-semibold small mb-1">{{ alert.message }}</div>
+                                <small class="text-muted"><i class="bi bi-clock me-1"></i>{{ alert.created_at }}</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-bell-slash fs-1 d-block mb-2 text-muted"></i>
+                        No notifications currently present.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    </main>
 
-    <script src="{{ url_for('static', filename='custom.js') }}"></script>
+    <!-- Client Script for LPU Tab Buttons and Interactivity -->
+    <script>
+        function switchToTab(tabName) {
+            // Update button styles
+            document.querySelectorAll('.rms-tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            // Hide all tab views
+            document.querySelectorAll('.rms-tab-view').forEach(view => {
+                view.classList.add('d-none');
+            });
+
+            if (tabName === 'request') {
+                document.getElementById('btnTabRequest')?.classList.add('active');
+                document.getElementById('viewRequest')?.classList.remove('d-none');
+            } else if (tabName === 'status') {
+                document.getElementById('btnTabStatus')?.classList.add('active');
+                document.getElementById('viewStatus')?.classList.remove('d-none');
+            } else if (tabName === 'notifications') {
+                document.getElementById('btnTabNotifications')?.classList.add('active');
+                document.getElementById('viewNotifications')?.classList.remove('d-none');
+            }
+
+            // Update URL query param cleanly without reload
+            const url = new URL(window.location);
+            url.searchParams.set('tab', tabName);
+            window.history.replaceState({}, '', url);
+        }
+
+        // Attach click listeners to tab buttons
+        document.getElementById('btnTabRequest')?.addEventListener('click', () => switchToTab('request'));
+        document.getElementById('btnTabStatus')?.addEventListener('click', () => switchToTab('status'));
+        document.getElementById('btnTabNotifications')?.addEventListener('click', () => switchToTab('notifications'));
+
+        // Client side filtering for status tickets
+        const filterInput = document.getElementById('statusFilterInput');
+        filterInput?.addEventListener('input', function(e) {
+            const query = e.target.value.toLowerCase().trim();
+            document.querySelectorAll('.complaint-item-card').forEach(card => {
+                const text = card.innerText.toLowerCase();
+                card.style.display = text.includes(query) ? '' : 'none';
+            });
+        });
+
+        // Status pill filters
+        document.querySelectorAll('.filter-status-pill').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.filter-status-pill').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                const targetStatus = this.getAttribute('data-status');
+                document.querySelectorAll('.complaint-item-card').forEach(card => {
+                    if (targetStatus === 'all') {
+                        card.style.display = '';
+                    } else {
+                        const cardStatus = card.getAttribute('data-card-status');
+                        card.style.display = cardStatus.includes(targetStatus) ? '' : 'none';
+                    }
+                });
+            });
+        });
+
+        // Prompt Chips Click to Fill
+        document.querySelectorAll('.lpu-chip').forEach(chip => {
+            chip.addEventListener('click', function() {
+                const textarea = document.getElementById('description');
+                if (textarea) {
+                    textarea.value = this.getAttribute('data-prompt');
+                    textarea.focus();
+                    const counter = document.getElementById('char-count');
+                    if (counter) counter.textContent = (500 - textarea.value.length) + " character(s) left";
+                }
+            });
+        });
+
+        // Description char counter
+        const descBox = document.getElementById('description');
+        const charCount = document.getElementById('char-count');
+        descBox?.addEventListener('input', function() {
+            if (charCount) {
+                const remaining = 500 - this.value.length;
+                charCount.textContent = remaining + " character(s) left";
+            }
+        });
+    </script>
 </body>
 </html>
