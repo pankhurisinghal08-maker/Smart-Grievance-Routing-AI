@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Assigned Personnel Desk · Student Grievance System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <!-- Top University Bar (LPU Student Grievance Assigned Header) -->
+    <header class="lpu-top-bar py-2 px-3">
+        <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-3">
+                <span class="rms-badge" style="background: #059669;">ASSIGNED DESK</span>
+                <div>
+                    <div class="lpu-brand-title">
+                        <img src="{{ url_for('static', filename='images/lpu_logo.png') }}" alt="LPU Logo" class="lpu-top-logo me-2"> LOVELY PROFESSIONAL UNIVERSITY
+                    </div>
+                    <div class="lpu-brand-subtitle">Student Grievance System &middot; Assigned Personnel &amp; Faculty Operations</div>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="user-profile-chip">
+                    {% if current_faculty %}
+                    <i class="bi bi-person-badge-fill text-warning"></i>
+                    <span><strong>{{ current_faculty.name }}</strong> ({{ current_faculty.department }} Desk)</span>
+                    {% else %}
+                    <i class="bi bi-people-fill text-warning"></i>
+                    <span><strong>Assigned Operations Desk</strong></span>
+                    {% endif %}
+                </div>
+                <span class="badge bg-dark bg-opacity-50 text-white-50 border border-secondary border-opacity-50 small">
+                    <i class="bi bi-database text-info"></i> {{ backend|upper }}
+                </span>
+                <a href="/logout" class="btn btn-sm btn-danger py-1 px-3 shadow-sm">
+                    <i class="bi bi-box-arrow-right me-1"></i> Logout
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Sub-header Breadcrumb Bar -->
+    <div class="lpu-sub-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h4 class="mb-0 fw-bold" style="color: var(--lpu-navy);">
+                        <i class="bi bi-person-workspace me-2" style="color: #059669;"></i>Assigned Personnel Operations Dashboard
+                    </h4>
+                    <small class="text-muted">Combined workspace for assigned faculty and staff officers &middot; Inspect grievances, send official replies, and execute job resolutions</small>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('assigned_dashboard', faculty_id=selected_faculty_id, status='all') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Refresh Queue
+                    </a>
+                    {% if selected_faculty_id != 'all' %}
+                    <a href="{{ url_for('assigned_dashboard', faculty_id='all', status='all') }}" class="btn btn-sm btn-lpu-primary">
+                        <i class="bi bi-grid-3x3-gap-fill me-1"></i> Combined Master View
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="container pb-5">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category if category != 'error' else 'danger' }} py-2 px-3 small rounded-2 mb-3 d-flex align-items-center">
+                    <i class="bi bi-exclamation-circle-fill me-2 flex-shrink-0"></i>
+                    <div>{{ message }}</div>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Officer Active Workspace Hero Banner -->
+        <div class="officer-hero-banner">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="p-3 bg-white bg-opacity-10 rounded-circle text-warning fs-3">
+                        {% if current_faculty %}
+                        <i class="bi bi-person-check-fill"></i>
+                        {% else %}
+                        <i class="bi bi-diagram-3-fill"></i>
+                        {% endif %}
+                    </div>
+                    <div>
+                        {% if current_faculty %}
+                        <div class="text-warning small fw-bold text-uppercase tracking-wider">Assigned Faculty Workspace</div>
+                        <h4 class="fw-bold mb-0 text-white">{{ current_faculty.name }}</h4>
+                        <div class="text-white-50 small mt-1">
+                            <span class="badge bg-warning text-dark me-2">{{ current_faculty.department }} Department Desk</span>
+                            <i class="bi bi-envelope me-1"></i>{{ current_faculty.email }}
+                        </div>
+                        {% else %}
+                        <div class="text-warning small fw-bold text-uppercase tracking-wider">Master Combined Work Desk</div>
+                        <h4 class="fw-bold mb-0 text-white">All Assigned Personnel &amp; Departmental Officers</h4>
+                        <div class="text-white-50 small mt-1">
+                            Showing unified grievance queue across all {{ faculty_list|length }} university department heads
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="badge bg-white bg-opacity-20 text-white p-2 px-3 fs-6">
+                        <i class="bi bi-inbox-fill text-warning me-1"></i>
+                        <strong>{{ stats.total }}</strong> Total Assigned
+                    </span>
+                    <span class="badge bg-danger bg-opacity-80 text-white p-2 px-3 fs-6">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        <strong>{{ stats.high_priority }}</strong> Urgent
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metric Stat Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="lpu-stat-card" style="--stat-top-border: var(--lpu-navy);">
+                    <div class="lpu-stat-label">Total Assigned</div>
+                    <div class="lpu-stat-num">{{ stats.total }}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="lpu-stat-card" style="--stat-top-border: #dc2626;">
+                    <div class="lpu-stat-label text-danger">Urgent / Emergency</div>
+                    <div class="lpu-stat-num text-danger">{{ stats.high_priority }}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="lpu-stat-card" style="--stat-top-border: var(--lpu-gold);">
+                    <div class="lpu-stat-label text-warning">Pending Action</div>
+                    <div class="lpu-stat-num text-warning">{{ stats.pending }}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="lpu-stat-card" style="--stat-top-border: #2563eb;">
+                    <div class="lpu-stat-label text-primary">In Progress</div>
+                    <div class="lpu-stat-num text-primary">{{ stats.in_progress }}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="lpu-stat-card" style="--stat-top-border: #9333ea;">
+                    <div class="lpu-stat-label" style="color: #9333ea;">Awaiting Feedback</div>
+                    <div class="lpu-stat-num" style="color: #9333ea;">{{ stats.awaiting_feedback }}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="lpu-stat-card" style="--stat-top-border: #16a34a;">
+                    <div class="lpu-stat-label text-success">Closed / Completed</div>
+                    <div class="lpu-stat-num text-success">{{ stats.closed }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Workspaces & Personnel Selector Card -->
+        <div class="rms-card mb-4">
+            <div class="p-3">
+                <!-- Assigned Officer Filter Bar -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <small class="text-muted fw-bold text-uppercase" style="font-size: 0.72rem;">
+                            <i class="bi bi-people-fill me-1"></i> Assigned Personnel Workspaces (Select Officer to Filter):
+                        </small>
+                        <span class="small text-muted">
+                            Click any officer to view their dedicated queue, or select Combined View.
+                        </span>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{{ url_for('assigned_dashboard', faculty_id='all', status=selected_status) }}" 
+                           class="officer-select-chip {% if selected_faculty_id == 'all' %}active{% endif %}">
+                            <i class="bi bi-collection-fill"></i>
+                            <span>All Assigned (Combined)</span>
+                            <span class="chip-badge">{{ total_all_count }}</span>
+                        </a>
+
+                        {% for fac in faculty_list %}
+                        <a href="{{ url_for('assigned_dashboard', faculty_id=fac.id, status=selected_status) }}" 
+                           class="officer-select-chip {% if selected_faculty_id == fac.id|string or selected_faculty_id == fac.id %}active{% endif %}">
+                            {% if fac.department == 'IT' %}<i class="bi bi-laptop text-info"></i>
+                            {% elif fac.department == 'Maintenance' %}<i class="bi bi-tools text-primary"></i>
+                            {% elif fac.department == 'Cafeteria' %}<i class="bi bi-cup-hot text-warning"></i>
+                            {% elif fac.department == 'Security' %}<i class="bi bi-shield-shaded text-danger"></i>
+                            {% elif fac.department == 'Finance' %}<i class="bi bi-cash-stack text-success"></i>
+                            {% elif fac.department == 'Library' %}<i class="bi bi-book text-secondary"></i>
+                            {% elif fac.department == 'Discipline' %}<i class="bi bi-award text-purple"></i>
+                            {% elif fac.department == 'Examination' %}<i class="bi bi-journal-check text-danger"></i>
+                            {% else %}<i class="bi bi-person-badge"></i>
+                            {% endif %}
+                            <span>{{ fac.name }}</span>
+                            <small class="text-muted">({{ fac.department }})</small>
+                            <span class="chip-badge">{{ faculty_counts.get(fac.id, 0) }}</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Status Filter & Instant Search -->
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 border-top">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <small class="text-muted fw-bold text-uppercase me-1" style="font-size: 0.72rem;">
+                            <i class="bi bi-funnel me-1"></i> Filter By Status:
+                        </small>
+                        {% for st in ['all', 'High Priority', 'Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Closed'] %}
+                        <a href="{{ url_for('assigned_dashboard', faculty_id=selected_faculty_id, status=st) }}" 
+                           class="btn btn-sm {% if selected_status == st %}btn-lpu-primary{% else %}btn-outline-secondary{% endif %} py-1 px-3">
+                            {% if st == 'High Priority' %}
+                            <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> Urgent Only
+                            {% else %}
+                            {{ st if st != 'all' else 'All Statuses' }}
+                            {% endif %}
+                        </a>
+                        {% endfor %}
+                    </div>
+
+                    <div style="min-width: 280px;" class="flex-grow-1 flex-md-grow-0">
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0">
+                                <i class="bi bi-search text-muted"></i>
+                            </span>
+                            <input id="assignedSearchInput" class="form-control form-control-sm border-start-0 ps-0" placeholder="Filter by Ticket #, Student, Keyword...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Assigned Grievances List -->
+        {% for c in complaints %}
+        <article class="rms-ticket-item assigned-complaint-card" data-ticket-id="{{ c.id }}" data-priority="{{ c.priority_level }}" data-status="{{ c.status }}">
+            <!-- Header Row -->
+            <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap pb-2 border-bottom mb-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="rms-ticket-id">Grievance Ticket #{{ c.id }}</span>
+                    <span class="lpu-badge-dept">
+                        {% if c.predicted_department == 'IT' %}<i class="bi bi-laptop"></i>
+                        {% elif c.predicted_department == 'Maintenance' %}<i class="bi bi-tools"></i>
+                        {% elif c.predicted_department == 'Cafeteria' %}<i class="bi bi-cup-hot"></i>
+                        {% elif c.predicted_department == 'Security' %}<i class="bi bi-shield-shaded"></i>
+                        {% elif c.predicted_department == 'Finance' %}<i class="bi bi-cash-stack"></i>
+                        {% elif c.predicted_department == 'Library' %}<i class="bi bi-book"></i>
+                        {% elif c.predicted_department == 'Discipline' %}<i class="bi bi-award"></i>
+                        {% elif c.predicted_department == 'Examination' %}<i class="bi bi-journal-check"></i>
+                        {% else %}<i class="bi bi-building"></i>
+                        {% endif %}
+                        {{ c.predicted_department }}
+                    </span>
+                    <span class="lpu-badge-faculty">
+                        <i class="bi bi-person-badge-fill"></i> Assigned: <strong>{{ c.faculty_name or 'Unassigned' }}</strong>
+                    </span>
+                    {% if c.priority_level == 'High Priority' %}
+                    <span class="lpu-badge-high">
+                        <i class="bi bi-exclamation-triangle-fill"></i> High Priority (Urgent)
+                    </span>
+                    {% else %}
+                    <span class="lpu-badge-normal">Normal</span>
+                    {% endif %}
+                </div>
+                <div>
+                    {% if c.status == 'Closed' or c.status == 'Resolved' %}
+                    <span class="lpu-badge-closed"><i class="bi bi-check2-all me-1"></i> Closed &amp; Verified</span>
+                    {% elif c.status == 'Completed - Awaiting Feedback' %}
+                    <span class="lpu-badge-awaiting"><i class="bi bi-patch-question me-1"></i> Completed - Awaiting Feedback</span>
+                    {% elif c.status == 'In Progress' %}
+                    <span class="lpu-badge-progress"><i class="bi bi-hourglass-split me-1"></i> In Progress</span>
+                    {% else %}
+                    <span class="lpu-badge-pending"><i class="bi bi-clock me-1"></i> Pending Review</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Emergency Alert Strip if High Priority -->
+            {% if c.priority_level == 'High Priority' and c.status != 'Closed' and c.status != 'Resolved' %}
+            <div class="urgent-alert-stripe">
+                <i class="bi bi-exclamation-octagon-fill fs-5"></i>
+                <span><strong>URGENT CASE ALERT:</strong> This grievance has been flagged high-priority. Please inspect immediately and respond with resolution steps.</span>
+            </div>
+            {% endif %}
+
+            <!-- Student Info & Issue Metadata -->
+            <div class="small text-muted mb-2 d-flex flex-wrap gap-3">
+                <span><i class="bi bi-person text-secondary me-1"></i> Student: <strong>{{ c.student_name }}</strong></span>
+                <span><i class="bi bi-card-text text-secondary me-1"></i> Roll Number: <strong>{{ c.roll_number }}</strong></span>
+                <span><i class="bi bi-clock text-secondary me-1"></i> Lodged: {{ c.created_at }}</span>
+                {% if c.closed_at %}
+                <span><i class="bi bi-check-circle-fill text-success me-1"></i> Completed: {{ c.closed_at }}</span>
+                {% endif %}
+            </div>
+
+            <!-- Grievance Description -->
+            <div class="p-3 bg-light rounded border mb-2">
+                <div class="small text-muted fw-bold text-uppercase mb-1" style="font-size: 0.72rem;">Student Problem Description:</div>
+                <p class="mb-0 text-dark fs-6">{{ c.description }}</p>
+            </div>
+
+            <!-- Official Resolution Remarks -->
+            {% if c.completion_note %}
+            <div class="alert alert-success py-2 px-3 small rounded-2 mb-2 border border-success border-opacity-25" style="background: #f0fdf4;">
+                <strong class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Official Resolution Remarks:</strong>
+                <div class="mt-1 text-dark">{{ c.completion_note }}</div>
+            </div>
+            {% endif %}
+
+            <!-- Student Resolution Feedback -->
+            {% if c.student_feedback %}
+            <div class="alert alert-info py-2 px-3 small rounded-2 mb-2 border border-info border-opacity-25" style="background: #f0f9ff;">
+                <strong class="text-primary"><i class="bi bi-chat-heart-fill me-1"></i> Student Resolution Sign-off:</strong>
+                <div class="mt-1 text-dark">{{ c.student_feedback }}</div>
+            </div>
+            {% endif %}
+
+            <!-- Case Discussion Thread -->
+            {% if c.comments %}
+            <div class="rms-thread-box mb-3">
+                <small class="text-muted fw-bold text-uppercase d-block mb-2" style="font-size: 0.75rem;">
+                    <i class="bi bi-chat-square-text-fill me-1"></i> Case Discussion &amp; Official Communications ({{ c.comments|length }})
+                </small>
+                {% for comment in c.comments %}
+                <div class="rms-thread-msg {% if comment.author_role == 'Faculty' %}faculty-msg{% elif comment.author_role == 'Admin' %}admin-msg{% else %}student-msg{% endif %}">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <strong class="{% if comment.author_role == 'Faculty' %}text-success{% elif comment.author_role == 'Admin' %}text-primary{% else %}text-danger{% endif %} small">
+                            {% if comment.author_role == 'Faculty' %}
+                            <i class="bi bi-person-badge-fill me-1"></i>
+                            {% elif comment.author_role == 'Admin' %}
+                            <i class="bi bi-shield-fill me-1"></i>
+                            {% else %}
+                            <i class="bi bi-person-fill me-1"></i>
+                            {% endif %}
+                            {{ comment.author_name }} ({{ comment.author_role }})
+                        </strong>
+                        <small class="text-muted" style="font-size: 0.72rem;">{{ comment.created_at }}</small>
+                    </div>
+                    <div class="text-dark small">{{ comment.message }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Action Controls (For Active Cases) -->
+            {% if c.status != 'Closed' and c.status != 'Resolved' %}
+            <div class="pt-3 border-top bg-light p-3 rounded border">
+                <div class="row g-3">
+                    <!-- 1. Quick Working Status Updater -->
+                    <div class="col-md-3">
+                        <form action="{{ url_for('faculty_update_status', complaint_id=c.id) }}" method="POST">
+                            <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
+                            <label class="form-label text-dark small fw-bold mb-1">
+                                <i class="bi bi-toggles me-1 text-primary"></i> Working Status
+                            </label>
+                            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="Pending" {% if c.status == 'Pending' %}selected{% endif %}>Pending</option>
+                                <option value="In Progress" {% if c.status == 'In Progress' %}selected{% endif %}>In Progress</option>
+                                <option value="Completed - Awaiting Feedback" {% if c.status == 'Completed - Awaiting Feedback' %}selected{% endif %}>Completed (Awaiting Feedback)</option>
+                                <option value="Closed" {% if c.status == 'Closed' or c.status == 'Resolved' %}selected{% endif %}>Mark Closed / Resolved</option>
+                            </select>
+                        </form>
+                    </div>
+
+                    <!-- 2. Re-route / Transfer to Another Faculty Officer -->
+                    <div class="col-md-3">
+                        <form action="{{ url_for('faculty_reassign', complaint_id=c.id) }}" method="POST">
+                            <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
+                            <label class="form-label text-dark small fw-bold mb-1">
+                                <i class="bi bi-arrow-left-right me-1 text-secondary"></i> Transfer Job
+                            </label>
+                            <div class="input-group">
+                                <select name="faculty_id" class="form-select form-select-sm" required>
+                                    <option value="" disabled selected>-- Transfer to Department Desk --</option>
+                                    {% for fac in other_faculty %}
+                                    <option value="{{ fac.id }}">
+                                        {{ fac.name }} ({{ fac.department }} Department)
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Transfer</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- 3. Send Official Progress Reply to Student -->
+                    <div class="col-md-6">
+                        <form action="{{ url_for('faculty_add_comment', complaint_id=c.id) }}" method="POST">
+                            <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
+                            <label class="form-label text-dark small fw-bold mb-1">
+                                <i class="bi bi-reply-fill me-1 text-success"></i> Official Response to Student
+                            </label>
+                            <div class="d-flex gap-2">
+                                <input name="message" required maxlength="500" class="form-control form-control-sm" placeholder="e.g. Technician deployed on site. Expected resolution in 1 hour...">
+                                <button class="btn btn-sm btn-success text-nowrap fw-semibold">
+                                    <i class="bi bi-send-fill me-1"></i> Send Reply
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- 4. Mark Job Completed & Provide Official Resolution Remarks -->
+                    {% if c.status != 'Completed - Awaiting Feedback' %}
+                    <div class="col-12">
+                        <form action="{{ url_for('faculty_complete_complaint', complaint_id=c.id) }}" method="POST">
+                            <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
+                            <div class="p-3 rounded-2 border border-success border-opacity-40 bg-white">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small class="text-success fw-bold">
+                                        <i class="bi bi-check2-circle me-1"></i> Execute Job Resolution &amp; Request Student Satisfaction Sign-off
+                                    </small>
+                                    <span class="badge bg-success bg-opacity-10 text-success small">Job Resolution Sign-off</span>
+                                </div>
+                                <div class="input-group">
+                                    <input name="completion_note" required maxlength="500" class="form-control form-control-sm" placeholder="Required: Detail the exact resolution work completed before requesting student verification...">
+                                    <button class="btn btn-sm btn-success fw-bold">
+                                        <i class="bi bi-check-lg me-1"></i> Complete Job &amp; Request Feedback
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="pt-2 border-top text-muted small d-flex align-items-center gap-2">
+                <i class="bi bi-shield-check text-success fs-5"></i>
+                <div>
+                    <strong>Job Complete:</strong> Case permanently verified and closed following student feedback.
+                </div>
+            </div>
+            {% endif %}
+        </article>
+        {% else %}
+        <div class="rms-card text-center py-5">
+            <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
+            <h5 class="text-dark">No complaints currently in this queue</h5>
+            <p class="text-muted mb-0">No tickets match the selected officer or status filter criteria.</p>
+            <div class="mt-3">
+                <a href="{{ url_for('assigned_dashboard', faculty_id='all', status='all') }}" class="btn btn-sm btn-lpu-primary">
+                    <i class="bi bi-arrow-repeat me-1"></i> View All Assigned Tickets
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </main>
+
+    <!-- Client-side Fast Live Search Script -->
+    <script>
+        document.getElementById('assignedSearchInput')?.addEventListener('input', function(e) {
+            const query = e.target.value.toLowerCase().trim();
+            document.querySelectorAll('.assigned-complaint-card').forEach(card => {
+                const text = card.innerText.toLowerCase();
+                card.style.display = text.includes(query) ? '' : 'none';
+            });
+        });
+    </script>
+</body>
+</html>
