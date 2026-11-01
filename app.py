@@ -1,4 +1,3 @@
-# Role-Based Access Control Middleware configured
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from functools import wraps
 import os
@@ -139,6 +138,15 @@ def home():
     if role == 'student' and session.get('student_id'):
         return redirect(url_for('student_portal'))
     return redirect(url_for('login'))
+
+@app.route('/switch')
+@app.route('/switch/user')
+def switch_user():
+    target_tab = request.args.get('tab', 'student').strip().lower()
+    if target_tab not in ('student', 'faculty', 'admin'):
+        target_tab = 'student'
+    session.clear()
+    return redirect(url_for('login', tab=target_tab, switch='1'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
