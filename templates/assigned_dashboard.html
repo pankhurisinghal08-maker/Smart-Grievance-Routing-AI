@@ -32,11 +32,8 @@
                     <span><strong>Assigned Operations Desk</strong></span>
                     {% endif %}
                 </div>
-                <a href="{{ url_for('switch_user', tab='faculty') }}" class="btn btn-sm btn-outline-light py-1 px-3" title="Switch Officer / Account">
-                    <i class="bi bi-arrow-left-right me-1"></i> Switch Officer
-                </a>
-                <a href="/logout" class="btn btn-sm btn-danger py-1 px-3 shadow-sm">
-                    <i class="bi bi-box-arrow-right me-1"></i> Logout
+                <a href="/logout" class="btn btn-sm btn-danger py-1 px-3 shadow-sm" title="Logout and return to Portal Switcher">
+                    <i class="bi bi-box-arrow-right me-1"></i> Logout / Switch User
                 </a>
             </div>
         </div>
@@ -53,14 +50,9 @@
                     <small class="text-muted">Combined workspace for assigned faculty and staff officers &middot; Inspect grievances, send official replies, and execute job resolutions</small>
                 </div>
                 <div class="d-flex gap-2">
-                    <a href="{{ url_for('assigned_dashboard', faculty_id=selected_faculty_id, status='all') }}" class="btn btn-sm btn-outline-secondary">
+                    <a href="{{ url_for('assigned_dashboard', status='all') }}" class="btn btn-sm btn-outline-secondary">
                         <i class="bi bi-arrow-clockwise me-1"></i> Refresh Queue
                     </a>
-                    {% if selected_faculty_id != 'all' %}
-                    <a href="{{ url_for('assigned_dashboard', faculty_id='all', status='all') }}" class="btn btn-sm btn-lpu-primary">
-                        <i class="bi bi-grid-3x3-gap-fill me-1"></i> Combined Master View
-                    </a>
-                    {% endif %}
                 </div>
             </div>
         </div>
@@ -161,49 +153,9 @@
             </div>
         </div>
 
-        <!-- Filter Workspaces & Personnel Selector Card -->
+        <!-- Filter Workspaces Card -->
         <div class="rms-card mb-4">
             <div class="p-3">
-                <!-- Assigned Officer Filter Bar -->
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                        <small class="text-muted fw-bold text-uppercase" style="font-size: 0.72rem;">
-                            <i class="bi bi-people-fill me-1"></i> Assigned Personnel Workspaces (Select Officer to Filter):
-                        </small>
-                        <span class="small text-muted">
-                            Click any officer to view their dedicated queue, or select Combined View.
-                        </span>
-                    </div>
-
-                    <div class="d-flex flex-wrap gap-2">
-                        <a href="{{ url_for('assigned_dashboard', faculty_id='all', status=selected_status) }}" 
-                           class="officer-select-chip {% if selected_faculty_id == 'all' %}active{% endif %}">
-                            <i class="bi bi-collection-fill"></i>
-                            <span>All Assigned (Combined)</span>
-                            <span class="chip-badge">{{ total_all_count }}</span>
-                        </a>
-
-                        {% for fac in faculty_list %}
-                        <a href="{{ url_for('assigned_dashboard', faculty_id=fac.id, status=selected_status) }}" 
-                           class="officer-select-chip {% if selected_faculty_id == fac.id|string or selected_faculty_id == fac.id %}active{% endif %}">
-                            {% if fac.department == 'IT' %}<i class="bi bi-laptop text-info"></i>
-                            {% elif fac.department == 'Maintenance' %}<i class="bi bi-tools text-primary"></i>
-                            {% elif fac.department == 'Cafeteria' %}<i class="bi bi-cup-hot text-warning"></i>
-                            {% elif fac.department == 'Security' %}<i class="bi bi-shield-shaded text-danger"></i>
-                            {% elif fac.department == 'Finance' %}<i class="bi bi-cash-stack text-success"></i>
-                            {% elif fac.department == 'Library' %}<i class="bi bi-book text-secondary"></i>
-                            {% elif fac.department == 'Discipline' %}<i class="bi bi-award text-purple"></i>
-                            {% elif fac.department == 'Examination' %}<i class="bi bi-journal-check text-danger"></i>
-                            {% else %}<i class="bi bi-person-badge"></i>
-                            {% endif %}
-                            <span>{{ fac.name }}</span>
-                            <small class="text-muted">({{ fac.department }})</small>
-                            <span class="chip-badge">{{ faculty_counts.get(fac.id, 0) }}</span>
-                        </a>
-                        {% endfor %}
-                    </div>
-                </div>
-
                 <!-- Status Filter & Instant Search -->
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 border-top">
                     <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -211,7 +163,7 @@
                             <i class="bi bi-funnel me-1"></i> Filter By Status:
                         </small>
                         {% for st in ['all', 'High Priority', 'Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Closed'] %}
-                        <a href="{{ url_for('assigned_dashboard', faculty_id=selected_faculty_id, status=st) }}" 
+                        <a href="{{ url_for('assigned_dashboard', status=st) }}" 
                            class="btn btn-sm {% if selected_status == st %}btn-lpu-primary{% else %}btn-outline-secondary{% endif %} py-1 px-3">
                             {% if st == 'High Priority' %}
                             <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> Urgent Only
@@ -310,11 +262,21 @@
             </div>
             {% endif %}
 
-            <!-- Student Resolution Feedback -->
+            <!-- Student Resolution Feedback & Sentiment -->
             {% if c.student_feedback %}
             <div class="alert alert-info py-2 px-3 small rounded-2 mb-2 border border-info border-opacity-25" style="background: #f0f9ff;">
-                <strong class="text-primary"><i class="bi bi-chat-heart-fill me-1"></i> Student Resolution Sign-off:</strong>
-                <div class="mt-1 text-dark">{{ c.student_feedback }}</div>
+                <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-1">
+                    <strong class="text-primary"><i class="bi bi-chat-heart-fill me-1"></i> Student Resolution Feedback:</strong>
+                    {% if c.feedback_sentiment == 'Positive' %}
+                    <span class="badge bg-success"><i class="bi bi-hand-thumbs-up-fill me-1"></i> Sentiment: Positive</span>
+                    {% elif c.feedback_sentiment == 'Negative' %}
+                    <span class="badge bg-danger"><i class="bi bi-hand-thumbs-down-fill me-1"></i> Sentiment: Negative</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Sentiment: Processing</span>
+                    {% endif %}
+                </div>
+                <div class="text-dark">{{ c.student_feedback }}</div>
+                <small class="text-muted d-block mt-1 fst-italic">Note: Grievance closure is officially executed by Central Administration based on student sentiment.</small>
             </div>
             {% endif %}
 
@@ -360,7 +322,7 @@
                                 <option value="Pending" {% if c.status == 'Pending' %}selected{% endif %}>Pending</option>
                                 <option value="In Progress" {% if c.status == 'In Progress' %}selected{% endif %}>In Progress</option>
                                 <option value="Completed - Awaiting Feedback" {% if c.status == 'Completed - Awaiting Feedback' %}selected{% endif %}>Completed (Awaiting Feedback)</option>
-                                <option value="Closed" {% if c.status == 'Closed' or c.status == 'Resolved' %}selected{% endif %}>Mark Closed / Resolved</option>
+                                
                             </select>
                         </form>
                     </div>
@@ -441,8 +403,8 @@
             <h5 class="text-dark">No complaints currently in this queue</h5>
             <p class="text-muted mb-0">No tickets match the selected officer or status filter criteria.</p>
             <div class="mt-3">
-                <a href="{{ url_for('assigned_dashboard', faculty_id='all', status='all') }}" class="btn btn-sm btn-lpu-primary">
-                    <i class="bi bi-arrow-repeat me-1"></i> View All Assigned Tickets
+                <a href="{{ url_for('assigned_dashboard', status='all') }}" class="btn btn-sm btn-lpu-primary">
+                    <i class="bi bi-arrow-repeat me-1"></i> View All My Tickets
                 </a>
             </div>
         </div>
