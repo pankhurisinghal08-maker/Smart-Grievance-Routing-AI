@@ -3,6 +3,7 @@ from functools import wraps
 import os
 from model.rules import get_priority_level
 from model.nlp_model import predict_department
+from model.sentiment_model import predict_feedback_sentiment
 from database.db import execute_query, get_backend_name
 
 app = Flask(__name__)
@@ -12,6 +13,7 @@ app.secret_key = os.getenv('SECRET_KEY', 'smart-grievance-ai-secret-key-2026')
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'Pankhuri')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'Pankhuri1007')
 VALID_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Closed', 'Resolved']
+VALID_FACULTY_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback']
 
 
 # ==============================================================================
@@ -100,7 +102,7 @@ def add_notification(message, complaint_id, user_id=None, faculty_id=None):
 def complaint_history(student_id):
     complaints = execute_query('''
         SELECT c.id, c.description, c.predicted_department, c.priority_level, c.status, 
-               c.created_at, c.completion_note, c.student_feedback, c.closed_at,
+               c.created_at, c.completion_note, c.student_feedback, c.feedback_sentiment, c.closed_at,
                f.name AS faculty_name, f.email AS faculty_email 
         FROM complaints c 
         LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
@@ -150,19 +152,8 @@ def switch_user():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # If a switch or reset is explicitly requested via query parameter, clear the session
-    if request.args.get('switch') or request.args.get('switched'):
+    if request.args.get('switch') or request.args.get('switched') or request.args.get('logout'):
         session.clear()
-
-    # If already logged into a role and not switching, send to their specific view
-    if request.method == 'GET' and not (request.args.get('switch') or request.args.get('switched')):
-        role = session.get('role')
-        if role == 'student' and session.get('student_id'):
-            return redirect(url_for('student_portal'))
-        if role == 'faculty' and session.get('faculty_id'):
-            return redirect(url_for('assigned_dashboard'))
-        if role == 'admin':
-            return redirect(url_for('admin'))
 
     faculty_list = execute_query('SELECT id, name, department, email FROM faculty ORDER BY department ASC, name ASC', fetchall=True) or []
     active_tab = request.args.get('tab', 'student').strip().lower()
@@ -194,17 +185,10 @@ def login():
         elif role_type == 'faculty':
             active_tab = 'faculty'
             faculty_id = request.form.get('faculty_id')
-            identifier = request.form.get('identifier', '').strip()
             matched = None
 
             if faculty_id:
                 matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = %s', (faculty_id,), fetchone=True)
-            elif identifier:
-                matched = execute_query(
-                    'SELECT id, name, department, email FROM faculty WHERE email = %s OR department = %s OR name LIKE %s LIMIT 1',
-                    (identifier, identifier, f"%{identifier}%"),
-                    fetchone=True
-                )
             else:
                 # Default to Parth Singhal (id: 1, IT department)
                 matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = 1', fetchone=True)
@@ -216,7 +200,7 @@ def login():
                 session['faculty_name'] = matched['name']
                 session['faculty_dept'] = matched['department']
                 return redirect(url_for('assigned_dashboard'))
-            error = "Please select an assigned officer from the list or enter a valid email / department."
+            error = "Please select an assigned officer from the list."
 
         # 3. ADMIN CONSOLE LOGIN
         elif role_type == 'admin':
@@ -411,22 +395,23 @@ def submit_feedback(complaint_id):
         fetchone=True
     )
     if complaint and feedback:
+        sentiment, conf = predict_feedback_sentiment(feedback)
         execute_query(
-            'UPDATE complaints SET status = %s, student_feedback = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s',
-            ('Closed', feedback[:500], complaint_id),
+            'UPDATE complaints SET student_feedback = %s, feedback_sentiment = %s WHERE id = %s',
+            (feedback[:500], sentiment, complaint_id),
             commit=True
         )
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, 'Student', 'Student', f"Final Feedback: {feedback[:500]} (Case Closed)"),
+            (complaint_id, session.get('student_name', 'Student'), 'Student', f"Student Feedback ({sentiment}): {feedback[:500]}"),
             commit=True
         )
         add_notification(
-            f'Grievance #{complaint_id} is permanently closed. Thank you for your feedback.',
+            f'Student submitted {sentiment.lower()} feedback on grievance #{complaint_id}. Awaiting central admin review.',
             complaint_id,
-            user_id=session['student_id'],
             faculty_id=complaint.get('assigned_faculty_id')
         )
+        flash('Thank you! Your resolution feedback has been recorded and submitted to University Administration for review and case closure.', 'success')
     return redirect(url_for('student_portal', tab='status'))
 
 
@@ -450,7 +435,7 @@ def assigned_dashboard():
     query = '''
         SELECT c.id, u.roll_number, u.name AS student_name, c.description, 
                c.predicted_department, c.priority_level, c.status, c.created_at, 
-               c.completion_note, c.student_feedback, c.assigned_faculty_id, c.closed_at,
+               c.completion_note, c.student_feedback, c.feedback_sentiment, c.assigned_faculty_id, c.closed_at,
                f.name AS faculty_name, f.email AS faculty_email 
         FROM complaints c 
         LEFT JOIN users u ON c.student_id = u.id 
@@ -518,18 +503,20 @@ def assigned_dashboard():
 def faculty_update_status(complaint_id):
     status = request.form.get('status', '').strip()
     active_faculty_id = session.get('faculty_id')
+
+    if status in ('Closed', 'Resolved'):
+        flash('Access Denied: Faculty cannot close complaints. Only Central University Administration can mark a grievance closed after verified positive student feedback.', 'danger')
+        return redirect(url_for('assigned_dashboard'))
+
     complaint = execute_query(
         'SELECT student_id, assigned_faculty_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s',
         (complaint_id, active_faculty_id),
         fetchone=True
     )
 
-    if complaint and status in VALID_STATUSES:
+    if complaint and status in VALID_FACULTY_STATUSES:
         author_name = session.get('faculty_name', 'Assigned Officer')
-        if status in ('Closed', 'Resolved'):
-            execute_query('UPDATE complaints SET status = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s', (status, complaint_id), commit=True)
-        else:
-            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
             (complaint_id, author_name, 'Faculty', f"Working status updated to: {status}"),
@@ -658,7 +645,7 @@ def admin():
     query = '''
         SELECT c.id, u.roll_number, u.name AS student_name, c.description, 
                c.predicted_department, c.priority_level, c.status, c.created_at, 
-               c.completion_note, c.student_feedback, c.assigned_faculty_id,
+               c.completion_note, c.student_feedback, c.feedback_sentiment, c.assigned_faculty_id,
                f.name AS faculty_name, f.email AS faculty_email 
         FROM complaints c 
         LEFT JOIN users u ON c.student_id = u.id 
@@ -726,18 +713,52 @@ def admin():
 @admin_required
 def update_status(complaint_id):
     status = request.form.get('status', '').strip()
-    complaint = execute_query('SELECT student_id FROM complaints WHERE id = %s', (complaint_id,), fetchone=True)
-    if complaint and status in VALID_STATUSES:
-        if status in ('Closed', 'Resolved'):
-            execute_query('UPDATE complaints SET status = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s', (status, complaint_id), commit=True)
-        else:
-            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+    complaint = execute_query(
+        'SELECT student_id, assigned_faculty_id, student_feedback, feedback_sentiment FROM complaints WHERE id = %s',
+        (complaint_id,),
+        fetchone=True
+    )
+    if not complaint:
+        return redirect(request.referrer or url_for('admin'))
+
+    if status in ('Closed', 'Resolved'):
+        # 1. Require student feedback
+        if not complaint.get('student_feedback') or not complaint['student_feedback'].strip():
+            flash(f'Cannot close Grievance #{complaint_id}: Student has not submitted resolution feedback yet. Cases cannot be closed without student verification.', 'warning')
+            return redirect(request.referrer or url_for('admin'))
+
+        # 2. Evaluate sentiment if needed
+        sentiment = complaint.get('feedback_sentiment')
+        if not sentiment:
+            sentiment, _ = predict_feedback_sentiment(complaint['student_feedback'])
+            execute_query('UPDATE complaints SET feedback_sentiment = %s WHERE id = %s', (sentiment, complaint_id), commit=True)
+
+        # 3. Require positive feedback
+        if sentiment != 'Positive':
+            flash(f'Cannot close Grievance #{complaint_id}: Student feedback was evaluated as Negative/Unsatisfied ("{complaint["student_feedback"][:90]}..."). The issue must be resolved satisfactorily before administrative closure.', 'danger')
+            return redirect(request.referrer or url_for('admin'))
+
+        # Positive feedback verified -> close
+        execute_query('UPDATE complaints SET status = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s', ('Closed', complaint_id), commit=True)
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Administrative Closure: Case verified and permanently closed following positive student feedback ({sentiment})."),
+            commit=True
+        )
+        add_notification(f'Grievance #{complaint_id} has been verified and permanently closed by Administration.', complaint_id, user_id=complaint['student_id'], faculty_id=complaint.get('assigned_faculty_id'))
+        flash(f'Grievance #{complaint_id} verified and permanently closed following positive student feedback.', 'success')
+        return redirect(request.referrer or url_for('admin'))
+
+    elif status in ('Pending', 'In Progress', 'Completed - Awaiting Feedback'):
+        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
             (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Administrative status update: {status}"),
             commit=True
         )
         add_notification(f'Grievance #{complaint_id} status changed to {status}.', complaint_id, user_id=complaint['student_id'])
+        flash(f'Grievance #{complaint_id} status updated to {status}.', 'info')
+
     return redirect(request.referrer or url_for('admin'))
 
 @app.route('/admin/comment/<int:complaint_id>', methods=['POST'])
