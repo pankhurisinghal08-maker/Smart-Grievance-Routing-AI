@@ -5,4 +5,4 @@ __pycache__/
 .env
 .venv/
 database/*.db
-model/saved_model.pkl
+model/*.pkl
