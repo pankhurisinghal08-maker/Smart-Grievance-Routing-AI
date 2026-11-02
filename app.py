@@ -114,7 +114,7 @@ def complaint_history(student_id):
         ids = [c['id'] for c in complaints]
         placeholders = ', '.join(['%s'] * len(ids))
         all_comments = execute_query(
-            f'SELECT complaint_id, author_name, author_role, message, created_at FROM complaint_comments WHERE complaint_id IN ({placeholders}) ORDER BY id ASC',
+            f"SELECT complaint_id, author_name, author_role, message, created_at FROM complaint_comments WHERE complaint_id IN ({placeholders}) AND author_role NOT LIKE '%%To Admin%%' ORDER BY id ASC",
             tuple(ids),
             fetchall=True
         ) or []
@@ -187,8 +187,12 @@ def login():
             faculty_id = request.form.get('faculty_id')
             matched = None
 
-            if faculty_id:
-                matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = %s', (faculty_id,), fetchone=True)
+            if not faculty_id:
+                faculty_id = '1'
+
+            matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = %s', (faculty_id,), fetchone=True)
+            if not matched:
+                matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = 1', fetchone=True)
 
             if matched:
                 session.clear()
@@ -542,14 +546,14 @@ def faculty_add_comment(complaint_id):
         dept_name = session.get('faculty_dept', 'Department')
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, author_name, 'Faculty', message[:500]),
+            (complaint_id, author_name, 'Faculty (To Admin)', message[:500]),
             commit=True
         )
         add_notification(
-            f"Officer {author_name} ({dept_name}) replied on #{complaint_id}: {message[:100]}",
-            complaint_id,
-            user_id=complaint['student_id']
+            f"Officer {author_name} ({dept_name}) sent a note to Admin on #{complaint_id}: {message[:100]}",
+            complaint_id
         )
+        flash('Message successfully submitted to Central Administration.', 'success')
     return redirect(url_for('assigned_dashboard'))
 
 @app.route('/faculty/complete/<int:complaint_id>', methods=['POST'])
@@ -585,33 +589,7 @@ def faculty_complete_complaint(complaint_id):
 @app.route('/faculty/reassign/<int:complaint_id>', methods=['POST'])
 @faculty_required
 def faculty_reassign(complaint_id):
-    target_faculty_id = request.form.get('faculty_id')
-    active_faculty_id = session.get('faculty_id')
-    complaint = execute_query(
-        'SELECT id, student_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s AND status NOT IN (%s, %s)',
-        (complaint_id, active_faculty_id, 'Closed', 'Resolved'),
-        fetchone=True
-    )
-    target_faculty = execute_query('SELECT id, name, department FROM faculty WHERE id = %s', (target_faculty_id,), fetchone=True)
-
-    if complaint and target_faculty:
-        old_name = session.get('faculty_name', 'Assigned Officer')
-        execute_query(
-            'UPDATE complaints SET assigned_faculty_id = %s, predicted_department = %s WHERE id = %s',
-            (target_faculty['id'], target_faculty['department'], complaint_id),
-            commit=True
-        )
-        execute_query(
-            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, old_name, 'Faculty', f"Transferred job to {target_faculty['name']} ({target_faculty['department']} department)."),
-            commit=True
-        )
-        add_notification(
-            f"Grievance #{complaint_id} was transferred to {target_faculty['name']} ({target_faculty['department']}).",
-            complaint_id,
-            user_id=complaint['student_id'],
-            faculty_id=target_faculty['id']
-        )
+    flash('Access Restricted: Faculty cannot transfer complaints. Grievance reassignment is managed exclusively by Central Administration.', 'warning')
     return redirect(url_for('assigned_dashboard'))
 
 
