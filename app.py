@@ -189,9 +189,6 @@ def login():
 
             if faculty_id:
                 matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = %s', (faculty_id,), fetchone=True)
-            else:
-                # Default to Parth Singhal (id: 1, IT department)
-                matched = execute_query('SELECT id, name, department, email FROM faculty WHERE id = 1', fetchone=True)
 
             if matched:
                 session.clear()
