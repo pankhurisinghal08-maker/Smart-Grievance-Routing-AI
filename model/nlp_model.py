@@ -38,9 +38,10 @@ def normalize_text(text):
     return t.strip()
 
 def load_training_data():
-    """Load and merge all available training and test datasets for optimal accuracy."""
+    """Load training data, using the test split only for legacy installs without a train split."""
     dfs = []
-    for path in [DATASET_TRAIN, DATASET_TEST]:
+    paths = [DATASET_TRAIN] if os.path.exists(DATASET_TRAIN) else [DATASET_TEST]
+    for path in paths:
         if os.path.exists(path):
             try:
                 df = pd.read_csv(path)

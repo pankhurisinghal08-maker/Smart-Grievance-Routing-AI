@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: grievance-department-classifier
+    runtime: python
+    plan: free
+    buildCommand: pip install --no-cache-dir -r requirements.txt && python -c "from model.nlp_model import train_model; train_model()"
+    startCommand: gunicorn model_api:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    healthCheckPath: /health

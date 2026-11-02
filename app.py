@@ -7,11 +7,11 @@ from model.sentiment_model import predict_feedback_sentiment
 from database.db import execute_query, get_backend_name
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'smart-grievance-ai-secret-key-2026')
+app.secret_key = os.getenv('SECRET_KEY') or os.urandom(32)
 
-# Updated Administrative Credentials
-ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'Pankhuri')
-ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'Pankhuri1007')
+# Admin access is disabled until explicit credentials are configured.
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', '')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '')
 VALID_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Closed', 'Resolved']
 VALID_FACULTY_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback']
 
@@ -208,7 +208,7 @@ def login():
             active_tab = 'admin'
             user = request.form.get('username', '').strip()
             pwd = request.form.get('password', '').strip()
-            if user == ADMIN_USERNAME and pwd == ADMIN_PASSWORD:
+            if ADMIN_USERNAME and ADMIN_PASSWORD and user == ADMIN_USERNAME and pwd == ADMIN_PASSWORD:
                 session.clear()
                 session['role'] = 'admin'
                 session['admin_user'] = ADMIN_USERNAME

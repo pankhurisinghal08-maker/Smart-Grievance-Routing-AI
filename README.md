@@ -66,16 +66,17 @@ pip install -r requirements.txt
 Configure your MySQL database credentials in `.env`:
 ```env
 DB_TYPE=mysql
-MYSQL_HOST=127.0.0.1
+MYSQL_HOST=your-mysql-host
 MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=Password
+MYSQL_USER=your-mysql-user
+MYSQL_PASSWORD=your-private-password
 MYSQL_DATABASE=grievance_system
 
+SECRET_KEY=replace_with_a_long_random_value
 FLASK_DEBUG=False
 PORT=5000
-ADMIN_USERNAME=Pankhuri
-ADMIN_PASSWORD=Pankhuri1007
+ADMIN_USERNAME=your-admin-username
+ADMIN_PASSWORD=your-strong-admin-password
 ```
 
 ### 3. Initialize & Train AI Models (Auto-trained on startup)
@@ -95,6 +96,15 @@ python app.py
 - **Unified Portal Gateway**: `http://127.0.0.1:5000/login`
   - **Student View**: Log in with your University Registration Number (e.g. `12509701`).
   - **Assigned Desk**: Select your assigned faculty officer profile (e.g. `Parth Patel - IT Desk`).
-  - **Admin View**: Sign in with administrator credentials:
-    - **Username**: `Pankhuri`
-    - **Password**: `Pankhuri1007`
+  - **Admin View**: Sign in with the administrator credentials configured in `.env`.
+
+---
+
+## Deploy the Department Classifier API for Free
+
+The standalone classifier API does not connect to MySQL. Create a free Render Web Service from this repository's `codex/deploy-department-model` branch and choose `render.yaml` as its Blueprint file. Render installs the dependencies, trains the classifier from `dataset/complaints_train.csv`, and serves the prediction API. The free service can sleep while idle, so its first request after a quiet period may take longer.
+
+- `GET /health` checks that the model is ready.
+- `POST /predict` accepts JSON such as `{"description":"The lab Wi-Fi is not working"}` and returns a predicted department.
+
+For the full grievance portal, configure a cloud-accessible MySQL database separately. A MySQL server running only on your computer is not reachable by a cloud service; do not expose your PC's MySQL port to the public internet.
