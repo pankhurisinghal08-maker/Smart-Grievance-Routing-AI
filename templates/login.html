@@ -54,7 +54,7 @@
                 </button>
                 <button type="button" class="portal-role-btn role-faculty {% if active_tab == 'faculty' %}active{% endif %}" id="tabBtnFaculty" data-tab="faculty">
                     <i class="bi bi-person-workspace"></i>
-                    <span>Assigned Desk</span>
+                    <span>Assigned Teachers</span>
                 </button>
                 <button type="button" class="portal-role-btn role-admin {% if active_tab == 'admin' %}active{% endif %}" id="tabBtnAdmin" data-tab="admin">
                     <i class="bi bi-shield-lock-fill"></i>
@@ -102,14 +102,14 @@
             </section>
 
             <!-- ==========================================================
-                 PANEL 2: ASSIGNED TASK ROLES (FACULTY OPERATIONS DESK)
+                 PANEL 2: ASSIGNED TEACHERS ROLES (FACULTY OPERATIONS DESK)
                  ========================================================== -->
             <section id="panelFaculty" class="portal-tab-panel {% if active_tab != 'faculty' %}d-none{% endif %}">
                 <div class="mb-3 pb-2 border-bottom">
                     <h6 class="fw-bold mb-0" style="color: #065f46;">
-                        <i class="bi bi-person-workspace me-1"></i> Assigned Task Desk
+                        <i class="bi bi-person-workspace me-1"></i> Assigned Teachers Desk
                     </h6>
-                    <small class="text-muted">Track progress on your assigned complaints and send updates directly to students.</small>
+                    <small class="text-muted">Manage assigned tasks (completed, waited, in-progress) and send messages directly to students.</small>
                 </div>
 
                 <form method="POST" action="/login">
@@ -117,7 +117,7 @@
                     
                     <div class="mb-4">
                         <label class="form-label text-dark fw-bold small">
-                            Select Assigned Officer / Department Desk <span class="text-danger">*</span>
+                            Select Assigned Teacher / Department Desk <span class="text-danger">*</span>
                         </label>
                         <div class="input-group">
                             <span class="input-group-text bg-light text-muted border-end-0">
@@ -134,7 +134,7 @@
                     </div>
 
                     <button type="submit" class="btn btn-success w-100 py-2 fw-bold shadow-sm" style="background: #059669; border-color: #059669;">
-                        <i class="bi bi-shield-check me-1"></i> Open Assigned Operations Desk
+                        <i class="bi bi-shield-check me-1"></i> Open Assigned Teachers Desk
                     </button>
                 </form>
             </section>

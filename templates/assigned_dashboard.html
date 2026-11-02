@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Assigned Personnel Desk · Student Grievance System</title>
+    <title>Assigned Teachers Desk · Student Grievance System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
@@ -13,12 +13,12 @@
     <header class="lpu-top-bar py-2 px-3">
         <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex align-items-center gap-3">
-                <span class="rms-badge" style="background: #059669;">ASSIGNED DESK</span>
+                <span class="rms-badge" style="background: #059669;">ASSIGNED TEACHERS</span>
                 <div>
                     <div class="lpu-brand-title">
                         <img src="{{ url_for('static', filename='images/lpu_logo.png') }}" alt="LPU Logo" class="lpu-top-logo me-2"> LOVELY PROFESSIONAL UNIVERSITY
                     </div>
-                    <div class="lpu-brand-subtitle">Student Grievance System &middot; Assigned Personnel &amp; Faculty Operations</div>
+                    <div class="lpu-brand-subtitle">Student Grievance System &middot; Assigned Teachers &amp; Faculty Operations</div>
                 </div>
             </div>
 
@@ -29,7 +29,7 @@
                     <span><strong>{{ current_faculty.name }}</strong> ({{ current_faculty.department }} Desk)</span>
                     {% else %}
                     <i class="bi bi-people-fill text-warning"></i>
-                    <span><strong>Assigned Operations Desk</strong></span>
+                    <span><strong>Assigned Teachers Desk</strong></span>
                     {% endif %}
                 </div>
                 <a href="/logout" class="btn btn-sm btn-danger py-1 px-3 shadow-sm" title="Logout and return to Portal Switcher">
@@ -45,9 +45,9 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
                     <h4 class="mb-0 fw-bold" style="color: var(--lpu-navy);">
-                        <i class="bi bi-person-workspace me-2" style="color: #059669;"></i>My Assigned Work
+                        <i class="bi bi-person-workspace me-2" style="color: #059669;"></i>Assigned Teachers Workspace
                     </h4>
-                    <small class="text-muted">Review and progress only the grievances assigned to you. Internal notes go to Administration.</small>
+                    <small class="text-muted">Review and progress your assigned grievances, manage task states (completed, waited, in-progress), and message students directly.</small>
                 </div>
 
             </div>
@@ -71,7 +71,7 @@
         <div class="officer-hero-banner">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div class="d-flex align-items-center gap-3">
-                    <div class="p-3 bg-white bg-opacity-10 rounded-circle text-warning fs-3">
+                    <div class="p-3 rounded-circle text-warning fs-3" style="background: rgba(255, 255, 255, 0.1);">
                         {% if current_faculty %}
                         <i class="bi bi-person-check-fill"></i>
                         {% else %}
@@ -97,11 +97,11 @@
                 </div>
 
                 <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="badge bg-white bg-opacity-20 text-white p-2 px-3 fs-6">
+                    <span class="badge p-2 px-3 fs-6 text-nowrap shadow-sm" style="background: rgba(255, 255, 255, 0.15); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.25);">
                         <i class="bi bi-inbox-fill text-warning me-1"></i>
                         <strong>{{ stats.total }}</strong> Total Assigned
                     </span>
-                    <span class="badge bg-danger bg-opacity-80 text-white p-2 px-3 fs-6">
+                    <span class="badge bg-danger bg-opacity-80 text-white p-2 px-3 fs-6 text-nowrap shadow-sm" style="border: 1px solid rgba(255, 255, 255, 0.2);">
                         <i class="bi bi-exclamation-triangle-fill me-1"></i>
                         <strong>{{ stats.high_priority }}</strong> Urgent
                     </span>
@@ -307,48 +307,62 @@
             </div>
             {% endif %}
 
-            <!-- Assigned staff have two actions: track progress and message the student. -->
+            <!-- Assigned Teachers Action Section: Task Management & Message to Student -->
             {% if c.status not in ['Closed', 'Resolved'] %}
             <div class="pt-3 border-top bg-light p-3 rounded border">
                 <div class="row g-3">
+                    <!-- 1. Task Management: Completed, Waited, and In Progress -->
                     <div class="col-lg-6">
-                        {% if c.status in ['Pending', 'In Progress'] %}
-                        <form action="{{ url_for('faculty_update_status', complaint_id=c.id) }}" method="POST">
-                            <label for="progress-status-{{ c.id }}" class="form-label text-dark small fw-bold mb-1">
-                                <i class="bi bi-list-check me-1 text-primary"></i> Progress Tracker
-                            </label>
-                            <select id="progress-status-{{ c.id }}" name="status" class="form-select form-select-sm mb-2" required>
-                                {% if c.status == 'Pending' %}
-                                <option value="Pending" selected>Pending</option>
-                                <option value="In Progress">In Progress</option>
-                                {% else %}
-                                <option value="In Progress" selected>In Progress</option>
-                                <option value="Completed - Awaiting Feedback">Completed - Awaiting Feedback</option>
-                                {% endif %}
-                            </select>
-                            <textarea name="completion_note" maxlength="500" rows="2" class="form-control form-control-sm mb-2" placeholder="Resolution summary (required when marking complete)">{% if c.status == 'In Progress' %}{{ c.completion_note or '' }}{% endif %}</textarea>
-                            <button class="btn btn-sm btn-primary fw-semibold">
-                                <i class="bi bi-arrow-repeat me-1"></i> Update Progress
-                            </button>
-                        </form>
-                        {% else %}
-                        <div class="small fw-bold text-dark mb-1"><i class="bi bi-list-check me-1 text-primary"></i> Progress Tracker</div>
-                        <div class="alert alert-info py-2 px-3 mb-0 small">
-                            Work is complete and waiting for student feedback. Final closure is managed by Administration.
+                        <div class="p-3 bg-white rounded border shadow-sm h-100 d-flex flex-column justify-content-between">
+                            <form action="{{ url_for('faculty_update_status', complaint_id=c.id) }}" method="POST">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label for="progress-status-{{ c.id }}" class="form-label text-dark small fw-bold mb-0">
+                                        <i class="bi bi-kanban-fill me-1 text-primary"></i> Task Management
+                                    </label>
+                                    <span class="badge {% if c.status == 'Pending' %}bg-warning text-dark{% elif c.status == 'In Progress' %}bg-primary{% elif c.status == 'Completed - Awaiting Feedback' %}bg-purple text-white{% else %}bg-secondary{% endif %}" style="font-size: 0.72rem;">
+                                        Status: {{ c.status }}
+                                    </span>
+                                </div>
+                                <div class="mb-2">
+                                    <select id="progress-status-{{ c.id }}" name="status" class="form-select form-select-sm" required>
+                                        <option value="Completed - Awaiting Feedback" {% if c.status == 'Completed - Awaiting Feedback' %}selected{% endif %}>
+                                            &#10004; Completed (Ready for Student Sign-off)
+                                        </option>
+                                        <option value="Pending" {% if c.status == 'Pending' %}selected{% endif %}>
+                                            &#9203; Waited (Pending Action)
+                                        </option>
+                                        <option value="In Progress" {% if c.status == 'In Progress' %}selected{% endif %}>
+                                            &#9881; In Progress (Actively Working)
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <textarea name="completion_note" maxlength="500" rows="2" class="form-control form-control-sm" placeholder="Resolution summary / task progress notes...">{{ c.completion_note or '' }}</textarea>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary fw-semibold w-100">
+                                    <i class="bi bi-arrow-repeat me-1"></i> Update Task Status
+                                </button>
+                            </form>
                         </div>
-                        {% endif %}
                     </div>
 
+                    <!-- 2. Send Message to Student -->
                     <div class="col-lg-6">
-                        <form action="{{ url_for('faculty_add_comment', complaint_id=c.id) }}" method="POST">
-                            <label for="student-message-{{ c.id }}" class="form-label text-dark small fw-bold mb-1">
-                                <i class="bi bi-chat-dots me-1 text-primary"></i> Message the Student
-                            </label>
-                            <textarea id="student-message-{{ c.id }}" name="message" required maxlength="500" rows="3" class="form-control form-control-sm mb-2" placeholder="Write an update for the student..."></textarea>
-                            <button class="btn btn-sm btn-primary text-nowrap fw-semibold">
-                                <i class="bi bi-send-fill me-1"></i> Send to Student
-                            </button>
-                        </form>
+                        <div class="p-3 bg-white rounded border shadow-sm h-100 d-flex flex-column justify-content-between">
+                            <form action="{{ url_for('faculty_add_comment', complaint_id=c.id) }}" method="POST">
+                                <div class="mb-2">
+                                    <label for="student-message-{{ c.id }}" class="form-label text-dark small fw-bold mb-0">
+                                        <i class="bi bi-chat-dots-fill me-1 text-success"></i> Send Message to Student
+                                    </label>
+                                </div>
+                                <div class="mb-3">
+                                    <textarea id="student-message-{{ c.id }}" name="message" required maxlength="500" rows="3" class="form-control form-control-sm" placeholder="Write an update or instruction directly for the student..."></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-success text-nowrap fw-semibold w-100">
+                                    <i class="bi bi-send-fill me-1"></i> Send Message to Student
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>

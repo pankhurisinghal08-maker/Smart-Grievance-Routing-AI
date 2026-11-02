@@ -707,3 +707,66 @@ h1, h2, h3, h4, h5, h6, .brand-font {
     gap: 0.5rem;
 }
 
+/* ==========================================================================
+   ADMIN CONSOLE TABS & ASSIGNED TEACHERS VIEW
+   ========================================================================== */
+.admin-tab-nav-bar {
+    border-bottom: 2px solid var(--lpu-border);
+}
+
+.custom-admin-tabs .nav-link {
+    color: var(--lpu-navy);
+    padding: 0.55rem 1.25rem;
+    font-size: 0.92rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.custom-admin-tabs .nav-link:hover {
+    background: #f8fafc;
+    color: var(--lpu-orange);
+}
+
+.custom-admin-tabs .nav-link.active {
+    background: var(--lpu-navy);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 33, 71, 0.25);
+}
+
+.custom-admin-tabs .nav-link.active i {
+    color: var(--lpu-orange) !important;
+}
+
+.teacher-filter-btn {
+    padding: 0.35rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--lpu-navy);
+    background: #ffffff;
+    border: 1px solid var(--lpu-border);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    text-decoration: none;
+}
+
+.teacher-filter-btn:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: var(--lpu-navy);
+}
+
+.teacher-filter-btn.active {
+    background: var(--lpu-navy);
+    color: #ffffff;
+    border-color: var(--lpu-navy);
+}
+
+.bg-purple {
+    background-color: #9333ea !important;
+}
+

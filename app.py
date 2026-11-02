@@ -12,7 +12,7 @@ app.secret_key = os.getenv('SECRET_KEY') or os.urandom(32)
 # Admin access is disabled until explicit credentials are configured.
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', '')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '')
-VALID_FACULTY_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback']
+VALID_FACULTY_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Completed', 'Waited', 'Waiting']
 
 
 # ==============================================================================
@@ -57,8 +57,7 @@ def faculty_required(view):
             flash('Access Denied: Students do not have permission to access the Faculty Assigned Operations Desk.', 'danger')
             return redirect(url_for('student_portal'))
         if role == 'admin':
-            flash('Access Restricted: Administrators must use the Central Admin Console.', 'warning')
-            return redirect(url_for('admin'))
+            return redirect(url_for('admin', tab='teachers'))
         if role != 'faculty' or not session.get('faculty_id'):
             session.clear()
             return redirect(url_for('login', tab='faculty'))
@@ -497,9 +496,19 @@ def assigned_dashboard():
 @app.route('/faculty/update-status/<int:complaint_id>', methods=['POST'])
 @faculty_required
 def faculty_update_status(complaint_id):
-    status = request.form.get('status', '').strip()
+    raw_status = request.form.get('status', '').strip()
     completion_note = request.form.get('completion_note', '').strip()
     active_faculty_id = session.get('faculty_id')
+
+    # Normalize status for task management (completed, waited, in-progress)
+    if raw_status.lower() in ('completed', 'completed - awaiting feedback'):
+        status = 'Completed - Awaiting Feedback'
+    elif raw_status.lower() in ('waited', 'waiting', 'pending'):
+        status = 'Pending'
+    elif raw_status.lower() in ('in progress', 'inprogress', 'progress', 'other'):
+        status = 'In Progress'
+    else:
+        status = raw_status
 
     if status in ('Closed', 'Resolved'):
         flash('Access Denied: Faculty cannot close complaints. Only Central University Administration can mark a grievance closed after verified positive student feedback.', 'danger')
@@ -513,43 +522,41 @@ def faculty_update_status(complaint_id):
 
     if not complaint:
         flash('That grievance is not assigned to your account.', 'danger')
-    elif status not in VALID_FACULTY_STATUSES:
-        flash('Choose a valid progress stage. Final closure is managed by administration.', 'warning')
-    elif complaint['status'] in ('Completed - Awaiting Feedback', 'Closed', 'Resolved'):
-        flash('This grievance has already reached the final staff progress stage.', 'warning')
-    elif complaint['status'] == 'Pending' and status == 'Completed - Awaiting Feedback':
-        flash('Move the grievance to In Progress before marking the work complete.', 'warning')
-    elif complaint['status'] == 'In Progress' and status == 'Pending':
-        flash('An in-progress grievance cannot move back to Pending.', 'warning')
-    elif status == 'Completed - Awaiting Feedback' and not completion_note:
-        flash('Add a short resolution summary before marking the work complete.', 'warning')
-    elif status != complaint['status']:
-        if status == 'Completed - Awaiting Feedback':
-            execute_query(
-                'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
-                (status, completion_note[:500], complaint_id),
-                commit=True
-            )
-        else:
-            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        return redirect(url_for('assigned_dashboard'))
 
-        if status == 'Completed - Awaiting Feedback':
-            update_message = 'The assigned officer marked the work complete and requested your resolution feedback.'
-            notification_message = f'Grievance #{complaint_id} is marked complete. Review the resolution summary and share your feedback.'
-        else:
-            update_message = f'Assigned officer updated the work status to: {status}'
-            notification_message = f'The assigned officer updated grievance #{complaint_id} to {status}.'
+    if complaint['status'] in ('Closed', 'Resolved'):
+        flash('This grievance has already reached the verified closed stage by Administration.', 'warning')
+        return redirect(url_for('assigned_dashboard'))
 
+    teacher_name = session.get('faculty_name', 'Assigned Teacher')
+    if status == 'Completed - Awaiting Feedback':
         execute_query(
-            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, 'System', 'System', update_message),
+            'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
+            (status, completion_note[:500] if completion_note else 'Work completed by assigned teacher. Awaiting student feedback.', complaint_id),
             commit=True
         )
-        add_notification(
-            notification_message,
-            complaint_id,
-            user_id=complaint['student_id']
-        )
+        update_message = f"Assigned teacher marked the task as Completed: {completion_note[:300] if completion_note else 'Resolution completed, awaiting student feedback.'}"
+        notification_message = f"Grievance #{complaint_id} marked as Completed. Review the resolution summary and share your feedback."
+    elif status == 'Pending':
+        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        update_message = f"Assigned teacher updated the task status to: Waited (Pending Action).{f' Remarks: {completion_note[:300]}' if completion_note else ''}"
+        notification_message = f"Assigned teacher updated grievance #{complaint_id} to Waited (Pending Action)."
+    else:
+        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        update_message = f"Assigned teacher updated the task status to: In Progress.{f' Remarks: {completion_note[:300]}' if completion_note else ''}"
+        notification_message = f"Assigned teacher updated grievance #{complaint_id} to In Progress."
+
+    execute_query(
+        'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+        (complaint_id, teacher_name, 'Faculty', update_message),
+        commit=True
+    )
+    add_notification(
+        notification_message,
+        complaint_id,
+        user_id=complaint['student_id']
+    )
+    flash(f"Task status updated to '{status}' successfully.", 'success')
     return redirect(url_for('assigned_dashboard'))
 
 @app.route('/faculty/comment/<int:complaint_id>', methods=['POST'])
@@ -677,8 +684,64 @@ def admin():
         departments=departments,
         selected_dept=selected_dept,
         selected_status=selected_status,
-        admin_name=ADMIN_USERNAME
+        admin_name=ADMIN_USERNAME,
+        active_tab=request.args.get('tab', 'triage')
     )
+
+@app.route('/admin/task-status/<int:complaint_id>', methods=['POST'])
+@admin_required
+def admin_update_task_status(complaint_id):
+    raw_status = request.form.get('status', '').strip()
+    completion_note = request.form.get('completion_note', '').strip()
+
+    if raw_status.lower() in ('completed', 'completed - awaiting feedback'):
+        status = 'Completed - Awaiting Feedback'
+    elif raw_status.lower() in ('waited', 'waiting', 'pending'):
+        status = 'Pending'
+    elif raw_status.lower() in ('in progress', 'inprogress', 'progress', 'other'):
+        status = 'In Progress'
+    elif raw_status.lower() in ('closed', 'resolved'):
+        status = 'Closed'
+    else:
+        status = raw_status
+
+    complaint = execute_query('SELECT student_id, assigned_faculty_id, status FROM complaints WHERE id = %s', (complaint_id,), fetchone=True)
+    if not complaint:
+        flash('Complaint not found.', 'danger')
+        return redirect(request.referrer or url_for('admin'))
+
+    if status == 'Closed':
+        return update_status(complaint_id)
+
+    if status == 'Completed - Awaiting Feedback':
+        execute_query(
+            'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
+            (status, completion_note[:500] if completion_note else 'Task marked completed. Awaiting student feedback.', complaint_id),
+            commit=True
+        )
+        update_msg = f"Task marked as Completed: {completion_note[:300] if completion_note else 'Resolution completed, awaiting student feedback.'}"
+        notif_msg = f"Grievance #{complaint_id} task marked as Completed. Please review and provide feedback."
+    elif status == 'Pending':
+        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        update_msg = f"Task status updated to: Waited (Pending Action).{f' Remarks: {completion_note[:300]}' if completion_note else ''}"
+        notif_msg = f"Grievance #{complaint_id} status updated to Waited (Pending Action)."
+    elif status == 'In Progress':
+        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        update_msg = f"Task status updated to: In Progress.{f' Remarks: {completion_note[:300]}' if completion_note else ''}"
+        notif_msg = f"Grievance #{complaint_id} status updated to In Progress."
+    else:
+        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        update_msg = f"Task status updated to: {status}"
+        notif_msg = f"Grievance #{complaint_id} status updated to {status}."
+
+    execute_query(
+        'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+        (complaint_id, f"Admin ({ADMIN_USERNAME})", 'Admin', update_msg),
+        commit=True
+    )
+    add_notification(notif_msg, complaint_id, user_id=complaint['student_id'], faculty_id=complaint.get('assigned_faculty_id'))
+    flash(f"Task status for Grievance #{complaint_id} updated to '{status}'.", 'success')
+    return redirect(request.referrer or url_for('admin', tab='teachers'))
 
 @app.route('/admin/update-status/<int:complaint_id>', methods=['POST'])
 @admin_required
@@ -794,7 +857,7 @@ def logout():
 
 if __name__ == '__main__':
     app.run(
-        host='0.0.0.0',
+        host=os.getenv('HOST', '127.0.0.1'),
         port=int(os.getenv('PORT', 5000)),
         debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true',
         threaded=True
