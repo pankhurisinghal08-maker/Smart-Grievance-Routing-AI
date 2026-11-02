@@ -23,9 +23,10 @@ CREATE TABLE complaints (
     predicted_department VARCHAR(100) NOT NULL,
     assigned_faculty_id INT,
     priority_level VARCHAR(20) DEFAULT 'Normal',
-    status VARCHAR(20) DEFAULT 'Pending',
+    status VARCHAR(50) DEFAULT 'Pending',
     completion_note TEXT NULL,
     student_feedback TEXT NULL,
+    feedback_sentiment VARCHAR(20) NULL,
     closed_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES users(id),
@@ -48,9 +49,7 @@ CREATE TABLE notifications (
     faculty_id INT NULL,
     complaint_id INT NOT NULL,
     message TEXT NOT NULL,
-    is_read TINYINT DEFAULT 0,
+    is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (faculty_id) REFERENCES faculty(id),
     FOREIGN KEY (complaint_id) REFERENCES complaints(id)
 );
