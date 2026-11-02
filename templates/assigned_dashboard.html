@@ -280,7 +280,7 @@
             {% if c.comments %}
             <div class="rms-thread-box mb-3">
                 <small class="text-muted fw-bold text-uppercase d-block mb-2" style="font-size: 0.75rem;">
-                    <i class="bi bi-chat-square-text-fill me-1"></i> Case Activity &amp; Internal Notes ({{ c.comments|length }})
+                    <i class="bi bi-chat-square-text-fill me-1"></i> Case Messages &amp; Updates ({{ c.comments|length }})
                 </small>
                 {% for comment in c.comments %}
                 <div class="rms-thread-msg {% if comment.author_role == 'Faculty (To Admin)' %}border border-warning bg-warning bg-opacity-10{% elif comment.author_role == 'System' %}border border-info bg-info bg-opacity-10{% elif comment.author_role == 'Faculty' %}faculty-msg{% elif comment.author_role == 'Admin' %}admin-msg{% else %}student-msg{% endif %}">
@@ -307,74 +307,49 @@
             </div>
             {% endif %}
 
-            <!-- Action Controls (For Active Cases) -->
-            {% if c.status != 'Closed' and c.status != 'Resolved' %}
+            <!-- Assigned staff have two actions: track progress and message the student. -->
+            {% if c.status not in ['Closed', 'Resolved'] %}
             <div class="pt-3 border-top bg-light p-3 rounded border">
                 <div class="row g-3">
-                    <!-- 1. Quick Working Status Updater -->
-                    {% if c.status in ['Pending', 'In Progress'] %}
-                    <div class="col-md-4">
+                    <div class="col-lg-6">
+                        {% if c.status in ['Pending', 'In Progress'] %}
                         <form action="{{ url_for('faculty_update_status', complaint_id=c.id) }}" method="POST">
-                            <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
-                            <label class="form-label text-dark small fw-bold mb-1">
-                                <i class="bi bi-toggles me-1 text-primary"></i> Working Status
+                            <label for="progress-status-{{ c.id }}" class="form-label text-dark small fw-bold mb-1">
+                                <i class="bi bi-list-check me-1 text-primary"></i> Progress Tracker
                             </label>
-                            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
-                                <option value="Pending" {% if c.status == 'Pending' %}selected{% else %}disabled{% endif %}>Pending</option>
-                                <option value="In Progress" {% if c.status == 'In Progress' %}selected{% endif %}>In Progress</option>
+                            <select id="progress-status-{{ c.id }}" name="status" class="form-select form-select-sm mb-2" required>
+                                {% if c.status == 'Pending' %}
+                                <option value="Pending" selected>Pending</option>
+                                <option value="In Progress">In Progress</option>
+                                {% else %}
+                                <option value="In Progress" selected>In Progress</option>
+                                <option value="Completed - Awaiting Feedback">Completed - Awaiting Feedback</option>
+                                {% endif %}
                             </select>
+                            <textarea name="completion_note" maxlength="500" rows="2" class="form-control form-control-sm mb-2" placeholder="Resolution summary (required when marking complete)">{% if c.status == 'In Progress' %}{{ c.completion_note or '' }}{% endif %}</textarea>
+                            <button class="btn btn-sm btn-primary fw-semibold">
+                                <i class="bi bi-arrow-repeat me-1"></i> Update Progress
+                            </button>
                         </form>
-                    </div>
-                    {% else %}
-                    <div class="col-12">
+                        {% else %}
+                        <div class="small fw-bold text-dark mb-1"><i class="bi bi-list-check me-1 text-primary"></i> Progress Tracker</div>
                         <div class="alert alert-info py-2 px-3 mb-0 small">
-                            {% if c.feedback_sentiment == 'Negative' %}
-                            Student feedback needs review. Send an internal note to Administration to request the next action.
-                            {% else %}
-                            Work is complete and is waiting for student feedback. Administration handles final closure.
-                            {% endif %}
+                            Work is complete and waiting for student feedback. Final closure is managed by Administration.
                         </div>
+                        {% endif %}
                     </div>
-                    {% endif %}
 
-                    <!-- 2. Send Message to Central Administration Only -->
-                    <div class="{% if c.status in ['Pending', 'In Progress'] %}col-md-8{% else %}col-12{% endif %}">
+                    <div class="col-lg-6">
                         <form action="{{ url_for('faculty_add_comment', complaint_id=c.id) }}" method="POST">
-                            <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
-                            <label class="form-label text-dark small fw-bold mb-1">
-                                <i class="bi bi-shield-shaded me-1 text-primary"></i> Message to Central Administration
+                            <label for="student-message-{{ c.id }}" class="form-label text-dark small fw-bold mb-1">
+                                <i class="bi bi-chat-dots me-1 text-primary"></i> Message the Student
                             </label>
-                            <div class="d-flex gap-2">
-                                <input name="message" required maxlength="500" class="form-control form-control-sm" placeholder="Send internal progress note / update to Central Administration...">
-                                <button class="btn btn-sm btn-primary text-nowrap fw-semibold">
-                                    <i class="bi bi-send-fill me-1"></i> Message Admin
-                                </button>
-                            </div>
+                            <textarea id="student-message-{{ c.id }}" name="message" required maxlength="500" rows="3" class="form-control form-control-sm mb-2" placeholder="Write an update for the student..."></textarea>
+                            <button class="btn btn-sm btn-primary text-nowrap fw-semibold">
+                                <i class="bi bi-send-fill me-1"></i> Send to Student
+                            </button>
                         </form>
                     </div>
-
-                    <!-- 4. Mark Job Completed & Provide Official Resolution Remarks -->
-                    {% if c.status in ['Pending', 'In Progress'] %}
-                    <div class="col-12">
-                        <form action="{{ url_for('faculty_complete_complaint', complaint_id=c.id) }}" method="POST">
-                            <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
-                            <div class="p-3 rounded-2 border border-success border-opacity-40 bg-white">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <small class="text-success fw-bold">
-                                        <i class="bi bi-check2-circle me-1"></i> Execute Job Resolution &amp; Request Student Satisfaction Sign-off
-                                    </small>
-                                    <span class="badge bg-success bg-opacity-10 text-success small">Job Resolution Sign-off</span>
-                                </div>
-                                <div class="input-group">
-                                    <input name="completion_note" required maxlength="500" class="form-control form-control-sm" placeholder="Required: Detail the exact resolution work completed before requesting student verification...">
-                                    <button class="btn btn-sm btn-success fw-bold">
-                                        <i class="bi bi-check-lg me-1"></i> Complete Job &amp; Request Feedback
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
             {% else %}

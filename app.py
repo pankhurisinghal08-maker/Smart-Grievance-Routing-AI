@@ -12,7 +12,7 @@ app.secret_key = os.getenv('SECRET_KEY') or os.urandom(32)
 # Admin access is disabled until explicit credentials are configured.
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', '')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '')
-VALID_FACULTY_STATUSES = ['Pending', 'In Progress']
+VALID_FACULTY_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback']
 
 
 # ==============================================================================
@@ -498,6 +498,7 @@ def assigned_dashboard():
 @faculty_required
 def faculty_update_status(complaint_id):
     status = request.form.get('status', '').strip()
+    completion_note = request.form.get('completion_note', '').strip()
     active_faculty_id = session.get('faculty_id')
 
     if status in ('Closed', 'Resolved'):
@@ -512,21 +513,40 @@ def faculty_update_status(complaint_id):
 
     if not complaint:
         flash('That grievance is not assigned to your account.', 'danger')
-    elif complaint['status'] in ('Completed - Awaiting Feedback', 'Closed', 'Resolved'):
-        flash('This grievance is waiting for student feedback or is already closed. Contact administration if it needs to be reopened.', 'warning')
     elif status not in VALID_FACULTY_STATUSES:
-        flash('Choose a valid work status. Final closure is managed by administration.', 'warning')
-    elif status == 'Pending' and complaint['status'] != 'Pending':
-        flash('An in-progress grievance cannot be moved back to Pending from the assigned desk.', 'warning')
+        flash('Choose a valid progress stage. Final closure is managed by administration.', 'warning')
+    elif complaint['status'] in ('Completed - Awaiting Feedback', 'Closed', 'Resolved'):
+        flash('This grievance has already reached the final staff progress stage.', 'warning')
+    elif complaint['status'] == 'Pending' and status == 'Completed - Awaiting Feedback':
+        flash('Move the grievance to In Progress before marking the work complete.', 'warning')
+    elif complaint['status'] == 'In Progress' and status == 'Pending':
+        flash('An in-progress grievance cannot move back to Pending.', 'warning')
+    elif status == 'Completed - Awaiting Feedback' and not completion_note:
+        flash('Add a short resolution summary before marking the work complete.', 'warning')
     elif status != complaint['status']:
-        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+        if status == 'Completed - Awaiting Feedback':
+            execute_query(
+                'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
+                (status, completion_note[:500], complaint_id),
+                commit=True
+            )
+        else:
+            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
+
+        if status == 'Completed - Awaiting Feedback':
+            update_message = 'The assigned officer marked the work complete and requested your resolution feedback.'
+            notification_message = f'Grievance #{complaint_id} is marked complete. Review the resolution summary and share your feedback.'
+        else:
+            update_message = f'Assigned officer updated the work status to: {status}'
+            notification_message = f'The assigned officer updated grievance #{complaint_id} to {status}.'
+
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, 'System', 'System', f"Assigned officer updated the work status to: {status}"),
+            (complaint_id, 'System', 'System', update_message),
             commit=True
         )
         add_notification(
-            f"The assigned officer updated grievance #{complaint_id} to {status}.",
+            notification_message,
             complaint_id,
             user_id=complaint['student_id']
         )
@@ -547,40 +567,15 @@ def faculty_add_comment(complaint_id):
         author_name = session.get('faculty_name', 'Assigned Officer')
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, author_name, 'Faculty (To Admin)', message[:500]),
-            commit=True
-        )
-        flash('Message successfully submitted to Central Administration.', 'success')
-    return redirect(url_for('assigned_dashboard'))
-
-@app.route('/faculty/complete/<int:complaint_id>', methods=['POST'])
-@faculty_required
-def faculty_complete_complaint(complaint_id):
-    note = request.form.get('completion_note', '').strip()
-    active_faculty_id = session.get('faculty_id')
-    complaint = execute_query(
-        'SELECT student_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s AND status IN (%s, %s)',
-        (complaint_id, active_faculty_id, 'Pending', 'In Progress'),
-        fetchone=True
-    )
-
-    if complaint and note:
-        author_name = session.get('faculty_name', 'Assigned Officer')
-        execute_query(
-            'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
-            ('Completed - Awaiting Feedback', note[:500], complaint_id),
-            commit=True
-        )
-        execute_query(
-            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, 'System', 'System', 'The assigned officer submitted a resolution note and requested student feedback.'),
+            (complaint_id, author_name, 'Faculty', message[:500]),
             commit=True
         )
         add_notification(
-            f"Officer {author_name} marked grievance #{complaint_id} completed. Please review remarks and submit feedback.",
+            f'Assigned officer {author_name} sent you an update on grievance #{complaint_id}.',
             complaint_id,
             user_id=complaint['student_id']
         )
+        flash('Message sent to the student.', 'success')
     return redirect(url_for('assigned_dashboard'))
 
 # ==============================================================================
