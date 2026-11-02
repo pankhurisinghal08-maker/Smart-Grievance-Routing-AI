@@ -66,14 +66,11 @@
                  PANEL 1: USER VIEW (STUDENT PORTAL LOGIN)
                  ========================================================== -->
             <section id="panelStudent" class="portal-tab-panel {% if active_tab != 'student' %}d-none{% endif %}">
-                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-                    <div>
-                        <h6 class="fw-bold mb-0 text-dark">
-                            <i class="bi bi-person-badge text-warning me-1"></i> Student Service Access
-                        </h6>
-                        <small class="text-muted">Lodge grievances and track resolution status</small>
-                    </div>
-                    <span class="badge bg-warning text-dark fw-bold">User View</span>
+                <div class="mb-3 pb-2 border-bottom">
+                    <h6 class="fw-bold mb-0 text-dark">
+                        <i class="bi bi-person-badge text-warning me-1"></i> Student Service Access
+                    </h6>
+                    <small class="text-muted">Lodge grievances and track resolution status</small>
                 </div>
 
                 <form method="POST" action="/login">
@@ -108,20 +105,17 @@
                  PANEL 2: ASSIGNED TASK ROLES (FACULTY OPERATIONS DESK)
                  ========================================================== -->
             <section id="panelFaculty" class="portal-tab-panel {% if active_tab != 'faculty' %}d-none{% endif %}">
-                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-                    <div>
-                        <h6 class="fw-bold mb-0" style="color: #065f46;">
-                            <i class="bi bi-person-workspace me-1"></i> Assigned Task Desk
-                        </h6>
-                        <small class="text-muted">Departmental faculty &amp; resolution staff operations</small>
-                    </div>
-                    <span class="badge text-white fw-bold" style="background: #059669;">Assigned Roles</span>
+                <div class="mb-3 pb-2 border-bottom">
+                    <h6 class="fw-bold mb-0" style="color: #065f46;">
+                        <i class="bi bi-person-workspace me-1"></i> Assigned Task Desk
+                    </h6>
+                    <small class="text-muted">Departmental faculty &amp; resolution staff operations</small>
                 </div>
 
                 <form method="POST" action="/login">
                     <input type="hidden" name="role_type" value="faculty">
                     
-                    <div class="mb-3">
+                    <div class="mb-4">
                         <label class="form-label text-dark fw-bold small">
                             Select Assigned Officer / Department Desk <span class="text-danger">*</span>
                         </label>
@@ -140,8 +134,6 @@
                         </div>
                     </div>
 
-
-
                     <button type="submit" class="btn btn-success w-100 py-2 fw-bold shadow-sm" style="background: #059669; border-color: #059669;">
                         <i class="bi bi-shield-check me-1"></i> Open Assigned Operations Desk
                     </button>
@@ -152,14 +144,11 @@
                  PANEL 3: ADMIN VIEW (CENTRAL ADMINISTRATIVE CONSOLE)
                  ========================================================== -->
             <section id="panelAdmin" class="portal-tab-panel {% if active_tab != 'admin' %}d-none{% endif %}">
-                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-                    <div>
-                        <h6 class="fw-bold mb-0 text-danger">
-                            <i class="bi bi-shield-lock-fill me-1"></i> Central Admin Console
-                        </h6>
-                        <small class="text-muted">University governance, triage oversight &amp; analytics</small>
-                    </div>
-                    <span class="badge bg-danger text-white fw-bold">Admin View</span>
+                <div class="mb-3 pb-2 border-bottom">
+                    <h6 class="fw-bold mb-0 text-danger">
+                        <i class="bi bi-shield-lock-fill me-1"></i> Central Admin Console
+                    </h6>
+                    <small class="text-muted">University governance, triage oversight &amp; analytics</small>
                 </div>
 
                 <form method="POST" action="/login">
