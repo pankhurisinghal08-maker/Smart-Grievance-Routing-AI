@@ -45,9 +45,9 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
                     <h4 class="mb-0 fw-bold" style="color: var(--lpu-navy);">
-                        <i class="bi bi-person-workspace me-2" style="color: #059669;"></i>Assigned Personnel Operations Dashboard
+                        <i class="bi bi-person-workspace me-2" style="color: #059669;"></i>My Assigned Work
                     </h4>
-                    <small class="text-muted">Dedicated workspace for assigned faculty officers &middot; Inspect grievances, manage resolution progress, and coordinate with Administration</small>
+                    <small class="text-muted">Review and progress only the grievances assigned to you. Internal notes go to Administration.</small>
                 </div>
 
             </div>
@@ -280,20 +280,24 @@
             {% if c.comments %}
             <div class="rms-thread-box mb-3">
                 <small class="text-muted fw-bold text-uppercase d-block mb-2" style="font-size: 0.75rem;">
-                    <i class="bi bi-chat-square-text-fill me-1"></i> Case Discussion &amp; Official Communications ({{ c.comments|length }})
+                    <i class="bi bi-chat-square-text-fill me-1"></i> Case Activity &amp; Internal Notes ({{ c.comments|length }})
                 </small>
                 {% for comment in c.comments %}
-                <div class="rms-thread-msg {% if comment.author_role == 'Faculty' %}faculty-msg{% elif comment.author_role == 'Admin' %}admin-msg{% else %}student-msg{% endif %}">
+                <div class="rms-thread-msg {% if comment.author_role == 'Faculty (To Admin)' %}border border-warning bg-warning bg-opacity-10{% elif comment.author_role == 'System' %}border border-info bg-info bg-opacity-10{% elif comment.author_role == 'Faculty' %}faculty-msg{% elif comment.author_role == 'Admin' %}admin-msg{% else %}student-msg{% endif %}">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <strong class="{% if comment.author_role == 'Faculty' %}text-success{% elif comment.author_role == 'Admin' %}text-primary{% else %}text-danger{% endif %} small">
-                            {% if comment.author_role == 'Faculty' %}
+                        <strong class="{% if comment.author_role == 'Faculty (To Admin)' %}text-warning-emphasis{% elif comment.author_role == 'System' %}text-info-emphasis{% elif comment.author_role == 'Faculty' %}text-success{% elif comment.author_role == 'Admin' %}text-primary{% else %}text-danger{% endif %} small">
+                            {% if comment.author_role == 'Faculty (To Admin)' %}
+                            <i class="bi bi-lock-fill me-1"></i> Internal note to Admin · {{ comment.author_name }}
+                            {% elif comment.author_role == 'System' %}
+                            <i class="bi bi-info-circle-fill me-1"></i> System update
+                            {% elif comment.author_role == 'Faculty' %}
                             <i class="bi bi-person-badge-fill me-1"></i>
                             {% elif comment.author_role == 'Admin' %}
                             <i class="bi bi-shield-fill me-1"></i>
                             {% else %}
                             <i class="bi bi-person-fill me-1"></i>
                             {% endif %}
-                            {{ comment.author_name }} ({{ comment.author_role }})
+                            {% if comment.author_role not in ['Faculty (To Admin)', 'System'] %}{{ comment.author_name }} ({{ comment.author_role }}){% endif %}
                         </strong>
                         <small class="text-muted" style="font-size: 0.72rem;">{{ comment.created_at }}</small>
                     </div>
@@ -308,6 +312,7 @@
             <div class="pt-3 border-top bg-light p-3 rounded border">
                 <div class="row g-3">
                     <!-- 1. Quick Working Status Updater -->
+                    {% if c.status in ['Pending', 'In Progress'] %}
                     <div class="col-md-4">
                         <form action="{{ url_for('faculty_update_status', complaint_id=c.id) }}" method="POST">
                             <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
@@ -315,15 +320,25 @@
                                 <i class="bi bi-toggles me-1 text-primary"></i> Working Status
                             </label>
                             <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
-                                <option value="Pending" {% if c.status == 'Pending' %}selected{% endif %}>Pending</option>
+                                <option value="Pending" {% if c.status == 'Pending' %}selected{% else %}disabled{% endif %}>Pending</option>
                                 <option value="In Progress" {% if c.status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                                <option value="Completed - Awaiting Feedback" {% if c.status == 'Completed - Awaiting Feedback' %}selected{% endif %}>Completed (Awaiting Feedback)</option>
                             </select>
                         </form>
                     </div>
+                    {% else %}
+                    <div class="col-12">
+                        <div class="alert alert-info py-2 px-3 mb-0 small">
+                            {% if c.feedback_sentiment == 'Negative' %}
+                            Student feedback needs review. Send an internal note to Administration to request the next action.
+                            {% else %}
+                            Work is complete and is waiting for student feedback. Administration handles final closure.
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <!-- 2. Send Message to Central Administration Only -->
-                    <div class="col-md-8">
+                    <div class="{% if c.status in ['Pending', 'In Progress'] %}col-md-8{% else %}col-12{% endif %}">
                         <form action="{{ url_for('faculty_add_comment', complaint_id=c.id) }}" method="POST">
                             <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">
                             <label class="form-label text-dark small fw-bold mb-1">
@@ -339,7 +354,7 @@
                     </div>
 
                     <!-- 4. Mark Job Completed & Provide Official Resolution Remarks -->
-                    {% if c.status != 'Completed - Awaiting Feedback' %}
+                    {% if c.status in ['Pending', 'In Progress'] %}
                     <div class="col-12">
                         <form action="{{ url_for('faculty_complete_complaint', complaint_id=c.id) }}" method="POST">
                             <input type="hidden" name="active_faculty_id" value="{{ selected_faculty_id }}">

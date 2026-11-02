@@ -42,12 +42,7 @@
                     <h4 class="mb-0 fw-bold" style="color: var(--lpu-navy);">
                         <i class="bi bi-kanban me-2" style="color: var(--lpu-orange);"></i>Department Triage & Case Coordination
                     </h4>
-                    <small class="text-muted">Review, reassign, send official updates, and mark grievances complete across all campus departments</small>
-                </div>
-                <div>
-                    <a href="{{ url_for('admin') }}" class="btn btn-sm btn-outline-secondary">
-                        <i class="bi bi-arrow-clockwise me-1"></i> Reset All Filters
-                    </a>
+                    <small class="text-muted">Oversee campus-wide queues, assign officers, manage escalations, and verify final closure</small>
                 </div>
             </div>
         </div>
@@ -105,6 +100,29 @@
                 </div>
             </div>
         </div>
+
+        {% if internal_notes %}
+        <section class="rms-card mb-4" aria-labelledby="staffNotesHeading">
+            <div class="rms-card-header d-flex justify-content-between align-items-center py-2 px-3 bg-light border-bottom">
+                <h5 id="staffNotesHeading" class="fw-bold small text-dark mb-0">Recent internal notes from assigned staff</h5>
+                <span class="badge bg-warning-subtle text-warning-emphasis">{{ internal_notes|length }} recent</span>
+            </div>
+            <div class="p-3">
+                {% for note in internal_notes %}
+                <div class="d-flex justify-content-between align-items-start gap-3 py-2 {% if not loop.last %}border-bottom{% endif %}">
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold small text-dark">
+                            Grievance #{{ note.complaint_id }} · {{ note.author_name }}
+                        </div>
+                        <div class="text-muted small">{{ note.predicted_department }} · {{ note.status }} · {{ note.created_at }}</div>
+                        <div class="small text-dark mt-1">{{ note.message }}</div>
+                    </div>
+                    <a class="btn btn-sm btn-outline-primary flex-shrink-0" href="{{ url_for('admin', dept='all', status='all') }}#complaint-{{ note.complaint_id }}">Open case</a>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
 
         <!-- Admin Exclusive: Administrative Oversight & Faculty Workload Roster (Collapsible) -->
         <div class="rms-card mb-4">
@@ -199,7 +217,7 @@
 
         <!-- Complaint Items List -->
         {% for c in complaints %}
-        <article class="rms-ticket-item admin-complaint-card">
+        <article id="complaint-{{ c.id }}" class="rms-ticket-item admin-complaint-card">
             <!-- Header Row -->
             <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap pb-2 border-bottom mb-2">
                 <div>
@@ -269,10 +287,16 @@
                     <i class="bi bi-chat-square-text-fill me-1"></i> Case Discussion & Remarks
                 </small>
                 {% for comment in c.comments %}
-                <div class="rms-thread-msg {% if comment.author_role == 'Faculty' %}faculty-msg{% elif comment.author_role == 'Admin' %}admin-msg{% else %}student-msg{% endif %}">
+                <div class="rms-thread-msg {% if comment.author_role == 'Faculty (To Admin)' %}border border-warning bg-warning bg-opacity-10{% elif comment.author_role == 'System' %}border border-info bg-info bg-opacity-10{% elif comment.author_role == 'Faculty' %}faculty-msg{% elif comment.author_role == 'Admin' %}admin-msg{% else %}student-msg{% endif %}">
                     <div class="d-flex justify-content-between align-items-center mb-1">
-                        <strong class="{% if comment.author_role == 'Faculty' %}text-success{% elif comment.author_role == 'Admin' %}text-primary{% else %}text-danger{% endif %} small">
+                        <strong class="{% if comment.author_role == 'Faculty (To Admin)' %}text-warning-emphasis{% elif comment.author_role == 'System' %}text-info-emphasis{% elif comment.author_role == 'Faculty' %}text-success{% elif comment.author_role == 'Admin' %}text-primary{% else %}text-danger{% endif %} small">
+                            {% if comment.author_role == 'Faculty (To Admin)' %}
+                            <i class="bi bi-lock-fill me-1"></i> Internal note to Admin · {{ comment.author_name }}
+                            {% elif comment.author_role == 'System' %}
+                            <i class="bi bi-info-circle-fill me-1"></i> System update
+                            {% else %}
                             {{ comment.author_name }} ({{ comment.author_role }})
+                            {% endif %}
                         </strong>
                         <small class="text-muted" style="font-size: 0.72rem;">{{ comment.created_at }}</small>
                     </div>
@@ -286,27 +310,11 @@
             {% if c.status != 'Closed' and c.status != 'Resolved' %}
             <div class="pt-2 border-top">
                 <div class="row g-2 align-items-center">
-                    <!-- Quick Working Status Dropdown -->
-                    <div class="col-md-3">
-                        <form action="{{ url_for('update_status', complaint_id=c.id) }}" method="POST">
-                            <label class="form-label text-muted small fw-bold mb-1">Working Status</label>
-                            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
-                                <option value="Pending" {% if c.status == 'Pending' %}selected{% endif %}>Pending</option>
-                                <option value="In Progress" {% if c.status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                                <option value="Completed - Awaiting Feedback" {% if c.status == 'Completed - Awaiting Feedback' %}selected{% endif %}>Completed (Awaiting Feedback)</option>
-                                {% if c.feedback_sentiment == 'Positive' %}
-                                <option value="Closed" {% if c.status == 'Closed' or c.status == 'Resolved' %}selected{% endif %}>Mark Closed (Feedback Verified)</option>
-                                {% else %}
-                                <option value="Closed" disabled>Mark Closed (Requires Positive Feedback)</option>
-                                {% endif %}
-                            </select>
-                        </form>
-                    </div>
-
                     <!-- Reassign Faculty / Department Dropdown -->
-                    <div class="col-md-4">
+                    <div class="col-md-5">
+                        {% if c.status != 'Completed - Awaiting Feedback' or c.feedback_sentiment == 'Negative' %}
                         <form action="{{ url_for('reassign_complaint', complaint_id=c.id) }}" method="POST">
-                            <label class="form-label text-muted small fw-bold mb-1">Re-route to Faculty</label>
+                            <label class="form-label text-muted small fw-bold mb-1">Assign or Re-route Officer</label>
                             <div class="input-group">
                                 <select name="faculty_id" class="form-select form-select-sm" required>
                                     {% for fac in faculty_list %}
@@ -315,13 +323,16 @@
                                     </option>
                                     {% endfor %}
                                 </select>
-                                <button type="submit" class="btn btn-sm btn-outline-secondary">Transfer</button>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Assign</button>
                             </div>
                         </form>
+                        {% else %}
+                        <div class="text-muted small pt-4">Assignment stays unchanged while student feedback is pending.</div>
+                        {% endif %}
                     </div>
 
                     <!-- Post Faculty Update Comment -->
-                    <div class="col-md-5">
+                    <div class="col-md-7">
                         <form action="{{ url_for('add_comment', complaint_id=c.id) }}" method="POST">
                             <label class="form-label text-muted small fw-bold mb-1">Send Update Remark to Student</label>
                             <div class="d-flex gap-2">
@@ -334,7 +345,7 @@
                     </div>
 
                     <!-- One-Click Verified Closure Action (If Positive Feedback Verified) -->
-                    {% if c.feedback_sentiment == 'Positive' and c.status != 'Closed' and c.status != 'Resolved' %}
+                    {% if c.status == 'Completed - Awaiting Feedback' and c.student_feedback and c.feedback_sentiment == 'Positive' %}
                     <div class="col-12 mt-2">
                         <form action="{{ url_for('update_status', complaint_id=c.id) }}" method="POST">
                             <input type="hidden" name="status" value="Closed">
@@ -369,24 +380,6 @@
                     </div>
                     {% endif %}
 
-                    <!-- Mark Resolved & Request Student Sign-off (If not already completed) -->
-                    {% if c.status != 'Completed - Awaiting Feedback' and not c.student_feedback %}
-                    <div class="col-12 mt-2">
-                        <form action="{{ url_for('complete_complaint', complaint_id=c.id) }}" method="POST">
-                            <div class="p-3 rounded-2 border border-success border-opacity-40" style="background: #f0fdf4;">
-                                <small class="text-success fw-bold d-block mb-1">
-                                    <i class="bi bi-check2-circle me-1"></i> Complete Grievance Work & Request Student Verification
-                                </small>
-                                <div class="input-group">
-                                    <input name="completion_note" required maxlength="500" class="form-control form-control-sm" placeholder="Required: Explain the exact resolution / action taken before requesting student closure...">
-                                    <button class="btn btn-sm btn-success fw-bold">
-                                        <i class="bi bi-check-lg me-1"></i> Mark Resolved & Request Feedback
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
             {% else %}

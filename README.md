@@ -12,8 +12,8 @@ An intelligent, enterprise campus grievance redressal and AI routing platform. T
 - **Unified Single-Gateway Authentication**: A single portal entry point (`/login`) with role tabs for **Student View**, **Assigned Task Desk**, and **Admin View**.
 - **Role-Based Access Control (RBAC)**:
   - **Students**: Lodge grievances, monitor status updates, converse in case discussion threads, and submit resolution satisfaction feedback.
-  - **Faculty Officers**: Access dedicated departmental workspaces, post official updates to students, reassign tickets to peer officers, and mark jobs completed with resolution remarks. Faculty are restricted from unilaterally closing tickets.
-  - **Central Administration**: Complete oversight of campus operations, collapsible faculty roster and workload statistics, re-routing controls, and exclusive authority to close tickets.
+  - **Assigned Faculty Officers**: Work only on their assigned grievances, move work from Pending to In Progress, record a resolution summary that requests student feedback, and send private internal notes to Administration. They cannot reassign cases or message students directly.
+  - **Central Administration**: View campus-wide queues and workload reports, assign or reassign officers, send student-facing updates, review negative feedback, and exclusively close completed grievances after positive student feedback.
 - **Sentiment-Verified Grievance Closure**:
   - A grievance cannot be closed until the student submits satisfaction feedback.
   - An integrated NLP sentiment classifier (`Positive` vs `Negative`) verifies the student's remarks.

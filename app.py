@@ -12,8 +12,7 @@ app.secret_key = os.getenv('SECRET_KEY') or os.urandom(32)
 # Admin access is disabled until explicit credentials are configured.
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', '')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '')
-VALID_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Closed', 'Resolved']
-VALID_FACULTY_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback']
+VALID_FACULTY_STATUSES = ['Pending', 'In Progress']
 
 
 # ==============================================================================
@@ -486,16 +485,12 @@ def assigned_dashboard():
         'closed': sum(x['status'] in ('Closed', 'Resolved') for x in my_all)
     }
 
-    # Faculty list for transfer option
-    other_faculty = execute_query('SELECT id, name, department, email FROM faculty WHERE id != %s ORDER BY department ASC, name ASC', (active_faculty_id,), fetchall=True) or []
-
     return render_template(
         'assigned_dashboard.html',
         complaints=complaints,
         stats=stats,
         backend=get_backend_name(),
         current_faculty=current_faculty,
-        other_faculty=other_faculty,
         selected_status=selected_status
     )
 
@@ -510,21 +505,28 @@ def faculty_update_status(complaint_id):
         return redirect(url_for('assigned_dashboard'))
 
     complaint = execute_query(
-        'SELECT student_id, assigned_faculty_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s',
+        'SELECT student_id, assigned_faculty_id, status FROM complaints WHERE id = %s AND assigned_faculty_id = %s',
         (complaint_id, active_faculty_id),
         fetchone=True
     )
 
-    if complaint and status in VALID_FACULTY_STATUSES:
-        author_name = session.get('faculty_name', 'Assigned Officer')
+    if not complaint:
+        flash('That grievance is not assigned to your account.', 'danger')
+    elif complaint['status'] in ('Completed - Awaiting Feedback', 'Closed', 'Resolved'):
+        flash('This grievance is waiting for student feedback or is already closed. Contact administration if it needs to be reopened.', 'warning')
+    elif status not in VALID_FACULTY_STATUSES:
+        flash('Choose a valid work status. Final closure is managed by administration.', 'warning')
+    elif status == 'Pending' and complaint['status'] != 'Pending':
+        flash('An in-progress grievance cannot be moved back to Pending from the assigned desk.', 'warning')
+    elif status != complaint['status']:
         execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, author_name, 'Faculty', f"Working status updated to: {status}"),
+            (complaint_id, 'System', 'System', f"Assigned officer updated the work status to: {status}"),
             commit=True
         )
         add_notification(
-            f"Officer {author_name} updated ticket #{complaint_id} status to: {status}.",
+            f"The assigned officer updated grievance #{complaint_id} to {status}.",
             complaint_id,
             user_id=complaint['student_id']
         )
@@ -543,15 +545,10 @@ def faculty_add_comment(complaint_id):
 
     if complaint and message:
         author_name = session.get('faculty_name', 'Assigned Officer')
-        dept_name = session.get('faculty_dept', 'Department')
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
             (complaint_id, author_name, 'Faculty (To Admin)', message[:500]),
             commit=True
-        )
-        add_notification(
-            f"Officer {author_name} ({dept_name}) sent a note to Admin on #{complaint_id}: {message[:100]}",
-            complaint_id
         )
         flash('Message successfully submitted to Central Administration.', 'success')
     return redirect(url_for('assigned_dashboard'))
@@ -562,8 +559,8 @@ def faculty_complete_complaint(complaint_id):
     note = request.form.get('completion_note', '').strip()
     active_faculty_id = session.get('faculty_id')
     complaint = execute_query(
-        'SELECT student_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s AND status NOT IN (%s, %s)',
-        (complaint_id, active_faculty_id, 'Closed', 'Resolved'),
+        'SELECT student_id FROM complaints WHERE id = %s AND assigned_faculty_id = %s AND status IN (%s, %s)',
+        (complaint_id, active_faculty_id, 'Pending', 'In Progress'),
         fetchone=True
     )
 
@@ -576,7 +573,7 @@ def faculty_complete_complaint(complaint_id):
         )
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, author_name, 'Faculty', f"Official Resolution: {note[:500]}"),
+            (complaint_id, 'System', 'System', 'The assigned officer submitted a resolution note and requested student feedback.'),
             commit=True
         )
         add_notification(
@@ -585,13 +582,6 @@ def faculty_complete_complaint(complaint_id):
             user_id=complaint['student_id']
         )
     return redirect(url_for('assigned_dashboard'))
-
-@app.route('/faculty/reassign/<int:complaint_id>', methods=['POST'])
-@faculty_required
-def faculty_reassign(complaint_id):
-    flash('Access Restricted: Faculty cannot transfer complaints. Grievance reassignment is managed exclusively by Central Administration.', 'warning')
-    return redirect(url_for('assigned_dashboard'))
-
 
 # ==============================================================================
 # MODULE 3: ADMIN VIEW (CENTRAL CAMPUS GOVERNANCE & TRIAGE HEADQUARTERS)
@@ -616,6 +606,16 @@ def admin():
         GROUP BY f.id, f.name, f.department, f.email
         ORDER BY f.department ASC, active_load DESC
     ''', fetchall=True) or []
+
+    internal_notes = execute_query('''
+        SELECT cm.id, cm.complaint_id, cm.author_name, cm.message, cm.created_at,
+               c.status, c.predicted_department
+        FROM complaint_comments cm
+        INNER JOIN complaints c ON c.id = cm.complaint_id
+        WHERE cm.author_role = %s
+        ORDER BY cm.id DESC
+        LIMIT 8
+    ''', ('Faculty (To Admin)',), fetchall=True) or []
 
     query = '''
         SELECT c.id, u.roll_number, u.name AS student_name, c.description, 
@@ -678,6 +678,7 @@ def admin():
         backend=get_backend_name(),
         faculty_list=faculty_list,
         faculty_workloads=faculty_workloads,
+        internal_notes=internal_notes,
         departments=departments,
         selected_dept=selected_dept,
         selected_status=selected_status,
@@ -688,52 +689,44 @@ def admin():
 @admin_required
 def update_status(complaint_id):
     status = request.form.get('status', '').strip()
+    if status != 'Closed':
+        flash('Work progress belongs to the assigned officer. Administration can perform verified final closure only.', 'warning')
+        return redirect(request.referrer or url_for('admin'))
+
     complaint = execute_query(
-        'SELECT student_id, assigned_faculty_id, student_feedback, feedback_sentiment FROM complaints WHERE id = %s',
+        'SELECT student_id, assigned_faculty_id, student_feedback, feedback_sentiment, status FROM complaints WHERE id = %s',
         (complaint_id,),
         fetchone=True
     )
     if not complaint:
         return redirect(request.referrer or url_for('admin'))
-
-    if status in ('Closed', 'Resolved'):
-        # 1. Require student feedback
-        if not complaint.get('student_feedback') or not complaint['student_feedback'].strip():
-            flash(f'Cannot close Grievance #{complaint_id}: Student has not submitted resolution feedback yet. Cases cannot be closed without student verification.', 'warning')
-            return redirect(request.referrer or url_for('admin'))
-
-        # 2. Evaluate sentiment if needed
-        sentiment = complaint.get('feedback_sentiment')
-        if not sentiment:
-            sentiment, _ = predict_feedback_sentiment(complaint['student_feedback'])
-            execute_query('UPDATE complaints SET feedback_sentiment = %s WHERE id = %s', (sentiment, complaint_id), commit=True)
-
-        # 3. Require positive feedback
-        if sentiment != 'Positive':
-            flash(f'Cannot close Grievance #{complaint_id}: Student feedback was evaluated as Negative/Unsatisfied ("{complaint["student_feedback"][:90]}..."). The issue must be resolved satisfactorily before administrative closure.', 'danger')
-            return redirect(request.referrer or url_for('admin'))
-
-        # Positive feedback verified -> close
-        execute_query('UPDATE complaints SET status = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s', ('Closed', complaint_id), commit=True)
-        execute_query(
-            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Administrative Closure: Case verified and permanently closed following positive student feedback ({sentiment})."),
-            commit=True
-        )
-        add_notification(f'Grievance #{complaint_id} has been verified and permanently closed by Administration.', complaint_id, user_id=complaint['student_id'], faculty_id=complaint.get('assigned_faculty_id'))
-        flash(f'Grievance #{complaint_id} verified and permanently closed following positive student feedback.', 'success')
+    if complaint['status'] != 'Completed - Awaiting Feedback':
+        flash('Only a completed grievance awaiting student feedback can be finalized by administration.', 'warning')
         return redirect(request.referrer or url_for('admin'))
 
-    elif status in ('Pending', 'In Progress', 'Completed - Awaiting Feedback'):
-        execute_query('UPDATE complaints SET status = %s WHERE id = %s', (status, complaint_id), commit=True)
-        execute_query(
-            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Administrative status update: {status}"),
-            commit=True
-        )
-        add_notification(f'Grievance #{complaint_id} status changed to {status}.', complaint_id, user_id=complaint['student_id'])
-        flash(f'Grievance #{complaint_id} status updated to {status}.', 'info')
+    # Require student feedback before any administrative closure.
+    if not complaint.get('student_feedback') or not complaint['student_feedback'].strip():
+        flash(f'Cannot close Grievance #{complaint_id}: Student has not submitted resolution feedback yet.', 'warning')
+        return redirect(request.referrer or url_for('admin'))
 
+    # Evaluate sentiment if it has not already been recorded.
+    sentiment = complaint.get('feedback_sentiment')
+    if not sentiment:
+        sentiment, _ = predict_feedback_sentiment(complaint['student_feedback'])
+        execute_query('UPDATE complaints SET feedback_sentiment = %s WHERE id = %s', (sentiment, complaint_id), commit=True)
+
+    if sentiment != 'Positive':
+        flash(f'Cannot close Grievance #{complaint_id}: student feedback must be positive before final closure.', 'danger')
+        return redirect(request.referrer or url_for('admin'))
+
+    execute_query('UPDATE complaints SET status = %s, closed_at = CURRENT_TIMESTAMP WHERE id = %s', ('Closed', complaint_id), commit=True)
+    execute_query(
+        'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+        (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Administrative Closure: Case verified and permanently closed following positive student feedback ({sentiment})."),
+        commit=True
+    )
+    add_notification(f'Grievance #{complaint_id} has been verified and permanently closed by Administration.', complaint_id, user_id=complaint['student_id'], faculty_id=complaint.get('assigned_faculty_id'))
+    flash(f'Grievance #{complaint_id} verified and permanently closed following positive student feedback.', 'success')
     return redirect(request.referrer or url_for('admin'))
 
 @app.route('/admin/comment/<int:complaint_id>', methods=['POST'])
@@ -750,44 +743,45 @@ def add_comment(complaint_id):
         add_notification(f'Central Administrative update on grievance #{complaint_id}: {message[:120]}', complaint_id, user_id=complaint['student_id'])
     return redirect(request.referrer or url_for('admin'))
 
-@app.route('/admin/complete/<int:complaint_id>', methods=['POST'])
-@admin_required
-def complete_complaint(complaint_id):
-    note = request.form.get('completion_note', '').strip()
-    complaint = execute_query('SELECT student_id FROM complaints WHERE id = %s AND status NOT IN (%s, %s)', (complaint_id, 'Closed', 'Resolved'), fetchone=True)
-    if complaint and note:
-        execute_query(
-            'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
-            ('Completed - Awaiting Feedback', note[:500], complaint_id),
-            commit=True
-        )
-        execute_query(
-            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, f'Administrator ({ADMIN_USERNAME})', 'Admin', f"Administrative Resolution: {note[:500]}"),
-            commit=True
-        )
-        add_notification(
-            f'Grievance #{complaint_id} was marked completed by University Admin. Please review the note and submit feedback.',
-            complaint_id,
-            user_id=complaint['student_id']
-        )
-    return redirect(request.referrer or url_for('admin'))
-
 @app.route('/admin/reassign/<int:complaint_id>', methods=['POST'])
 @admin_required
 def reassign_complaint(complaint_id):
     faculty_id = request.form.get('faculty_id')
-    complaint = execute_query('SELECT id, student_id, predicted_department FROM complaints WHERE id = %s AND status NOT IN (%s, %s)', (complaint_id, 'Closed', 'Resolved'), fetchone=True)
+    complaint = execute_query('SELECT id, student_id, predicted_department, status, student_feedback, feedback_sentiment, completion_note FROM complaints WHERE id = %s', (complaint_id,), fetchone=True)
     faculty = execute_query('SELECT id, name, department FROM faculty WHERE id = %s', (faculty_id,), fetchone=True)
-    if complaint and faculty:
+    if complaint and faculty and complaint['status'] not in ('Closed', 'Resolved'):
+        reopening_negative_case = (
+            complaint['status'] == 'Completed - Awaiting Feedback'
+            and complaint.get('feedback_sentiment') == 'Negative'
+        )
+        if complaint['status'] == 'Completed - Awaiting Feedback' and not reopening_negative_case:
+            flash('Only a grievance with negative feedback can be reopened from the completed state.', 'warning')
+            return redirect(request.referrer or url_for('admin'))
+
         execute_query(
-            'UPDATE complaints SET assigned_faculty_id = %s, predicted_department = %s WHERE id = %s',
-            (faculty['id'], faculty['department'], complaint_id),
+            '''UPDATE complaints
+               SET assigned_faculty_id = %s, predicted_department = %s, status = %s,
+                   completion_note = %s, student_feedback = %s, feedback_sentiment = %s
+               WHERE id = %s''',
+            (
+                faculty['id'],
+                faculty['department'],
+                'In Progress' if reopening_negative_case else complaint['status'],
+                None if reopening_negative_case else complaint.get('completion_note'),
+                None if reopening_negative_case else complaint.get('student_feedback'),
+                None if reopening_negative_case else complaint.get('feedback_sentiment'),
+                complaint_id
+            ),
             commit=True
         )
+        reassignment_message = f"Re-routed by Central Admin to {faculty['name']} ({faculty['department']})."
+        if reopening_negative_case:
+            reassignment_message = f"Reopened after negative student feedback and assigned to {faculty['name']} ({faculty['department']})."
+            if complaint.get('completion_note'):
+                reassignment_message += f" Previous resolution note: {complaint['completion_note']}"
         execute_query(
             'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
-            (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', f"Re-routed by Central Admin to {faculty['name']} ({faculty['department']})."),
+            (complaint_id, f'Admin ({ADMIN_USERNAME})', 'Admin', reassignment_message[:500]),
             commit=True
         )
         add_notification(
