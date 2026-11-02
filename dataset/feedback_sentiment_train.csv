@@ -1,0 +1,63 @@
+feedback_text,sentiment
+"The issue has been resolved satisfactorily. Thank you!",Positive
+"Technician visited my room and fixed the electricity. Excellent and fast help.",Positive
+"My fee receipt is now downloading properly. Thanks for resolving it.",Positive
+"Wifi speed is back to normal in hostel block 34. Very happy.",Positive
+"Water leakage was stopped and pipe was replaced. Good work.",Positive
+"Textbook return was updated in library system. Fine removed.",Positive
+"Mess food quality improved today. Satisfied with action.",Positive
+"Resolved promptly, appreciate the support.",Positive
+"Everything is working smoothly now. Thank you team.",Positive
+"Problem solved completely, thank you very much.",Positive
+"Great response from the department.",Positive
+"Thank you sir for the quick resolution.",Positive
+"Issue fixed on the same day. Great job.",Positive
+"The classroom projector was repaired. Working fine now.",Positive
+"My scholarship payment query was cleared by finance desk.",Positive
+"Air conditioner in the lab is cooling properly now. Thanks.",Positive
+"Prompt action taken by security team. Feeling safe.",Positive
+"Exam hall ticket was issued without any further delay.",Positive
+"Satisfied with the quick action taken by maintenance staff.",Positive
+"Library book records updated accurately. Very satisfied.",Positive
+"Water supply restored in washrooms. Thank you.",Positive
+"Cleanliness issue in cafeteria solved immediately.",Positive
+"The broken chair was replaced within a few hours. Good support.",Positive
+"Portal login glitch was resolved by IT team. Working perfectly.",Positive
+"Thank you for looking into my grievance so fast.",Positive
+"Very polite staff and quick redressal.",Positive
+"Completely satisfied with the outcome.",Positive
+"The grievance was addressed effectively. Thanks a lot.",Positive
+"Action taken is satisfactory.",Positive
+"Well done team, problem is sorted out.",Positive
+"Speedy resolution, thank you for the help.",Positive
+"All issues addressed properly. Highly appreciated.",Positive
+"The problem is still not fixed, water is still leaking heavily.",Negative
+"Nobody visited to inspect the electrical sparks. Very dangerous.",Negative
+"Still unable to download my exam hall ticket. Error persists.",Negative
+"Not satisfied at all, problem remains unresolved.",Negative
+"The technician did not show up. Waste of time.",Negative
+"Wifi is still not working in my room.",Negative
+"Unresolved complaint. My fine was not reversed.",Negative
+"Very poor service, issue was closed without actually fixing it.",Negative
+"Still facing the same problem, totally dissatisfied.",Negative
+"Food quality is still terrible and cold.",Negative
+"Nothing has been done yet.",Negative
+"The error is still there, please fix it properly.",Negative
+"Complaint marked resolved but work is completely unfinished.",Negative
+"Broken window glass is still not replaced. Safety hazard.",Negative
+"No action taken by cafeteria staff, still charging extra.",Negative
+"Worst support, no one responded to my follow-up messages.",Negative
+"The AC is still making loud noise and not cooling.",Negative
+"Fine is still showing on portal even after submitting textbook.",Negative
+"Still facing connection drops during online classes.",Negative
+"Dissatisfied with the response, issue remains unsolved.",Negative
+"Technician came but could not fix the leaking pipe.",Negative
+"Extremely disappointed with the lack of progress.",Negative
+"My grievance was ignored completely.",Negative
+"Issue is pending for a week, terrible service.",Negative
+"Nothing changed after complaint, still unresolved.",Negative
+"The fee receipt download is still throwing error 500.",Negative
+"Staff was unhelpful and did not solve my query.",Negative
+"Problem still exists as before.",Negative
+"Completely useless resolution, issue still persists.",Negative
+"Not resolved, please reopen and take action.",Negative
