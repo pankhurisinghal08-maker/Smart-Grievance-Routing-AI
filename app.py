@@ -1,15 +1,28 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from functools import wraps
 import os
+import csv
+import io
+import datetime
 from model.rules import get_priority_level
 from model.nlp_model import predict_department
 from model.sentiment_model import predict_feedback_sentiment
 from database.db import execute_query, get_backend_name
+from model.rag_engine import (
+    evaluate_complaint_acceptability,
+    find_similar_complaints,
+    generate_rag_resolution_draft,
+    calculate_hazard_risk_score,
+    calculate_dynamic_sla,
+    evaluate_sla_breach_risk,
+    generate_topic_hashtags,
+    CAMPUS_POLICIES
+)
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY') or os.urandom(32)
 
-# Admin access is disabled until explicit credentials are configured.
+# Admin access is configured via environment variables
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', '')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '')
 VALID_FACULTY_STATUSES = ['Pending', 'In Progress', 'Completed - Awaiting Feedback', 'Completed', 'Waited', 'Waiting']
@@ -101,6 +114,8 @@ def complaint_history(student_id):
     complaints = execute_query('''
         SELECT c.id, c.description, c.predicted_department, c.priority_level, c.status, 
                c.created_at, c.completion_note, c.student_feedback, c.feedback_sentiment, c.closed_at,
+               c.rag_acceptability, c.rag_policy_score, c.rag_policy_citation, c.rag_policy_advisory,
+               c.rag_cluster_id, c.sla_deadline, c.sla_breach_risk, c.urgency_score, c.topic_tags, c.escalation_level,
                f.name AS faculty_name, f.email AS faculty_email 
         FROM complaints c 
         LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
@@ -121,6 +136,10 @@ def complaint_history(student_id):
             comments_by_cid.setdefault(c['complaint_id'], []).append(c)
         for item in complaints:
             item['comments'] = comments_by_cid.get(item['id'], [])
+            sla_h = 6 if item.get('priority_level') == 'High Priority' else 24
+            risk_lvl, rem_str = evaluate_sla_breach_risk(item.get('created_at'), sla_h, item.get('status'))
+            item['sla_breach_risk'] = risk_lvl
+            item['sla_remaining_text'] = rem_str
     return complaints
 
 
@@ -234,7 +253,7 @@ def student_login_redirect():
 
 
 # ==============================================================================
-# MODULE 1: USER VIEW (STUDENT GRIEVANCE PORTAL)
+# MODULE 1: USER VIEW (STUDENT GRIEVANCE PORTAL & RAG POLICY CHECK)
 # ==============================================================================
 
 @app.route('/student')
@@ -251,11 +270,18 @@ def student_portal():
         fetchall=True
     ) or []
 
+    bulletins = execute_query(
+        'SELECT id, title, department, message, severity, created_at FROM campus_bulletins WHERE is_active = 1 ORDER BY id DESC LIMIT 5',
+        fetchall=True
+    ) or []
+
     submitted_id = request.args.get('submitted')
     result = None
     if submitted_id:
         comp = execute_query('''
-            SELECT c.id, c.description, c.predicted_department, c.priority_level,
+            SELECT c.id, c.description, c.predicted_department, c.priority_level, c.status,
+                   c.rag_acceptability, c.rag_policy_score, c.rag_policy_citation, c.rag_policy_advisory,
+                   c.rag_cluster_id, c.sla_deadline, c.sla_breach_risk, c.urgency_score, c.topic_tags,
                    u.name AS student_name, u.roll_number, f.name AS faculty_name, f.email AS faculty_email
             FROM complaints c
             JOIN users u ON c.student_id = u.id
@@ -272,7 +298,16 @@ def student_portal():
                 'faculty_name': comp['faculty_name'] or f"Department Desk ({comp['predicted_department']})",
                 'faculty_email': comp.get('faculty_email') or 'desk@college.edu',
                 'priority': comp['priority_level'],
-                'description': comp['description']
+                'description': comp['description'],
+                'status': comp['status'],
+                'rag_acceptability': comp.get('rag_acceptability') or 'Acceptable',
+                'rag_policy_score': comp.get('rag_policy_score') or 85.0,
+                'rag_policy_citation': comp.get('rag_policy_citation') or 'LPU Standard Student Grievance Policy',
+                'rag_policy_advisory': comp.get('rag_policy_advisory') or '',
+                'rag_cluster_id': comp.get('rag_cluster_id'),
+                'sla_deadline': comp.get('sla_deadline'),
+                'urgency_score': comp.get('urgency_score') or 15,
+                'topic_tags': comp.get('topic_tags') or f"#{comp['predicted_department']}"
             }
 
     history = complaint_history(student['id'])
@@ -294,6 +329,8 @@ def student_portal():
         history=history,
         alerts=alerts,
         result=result,
+        bulletins=bulletins,
+        policies=CAMPUS_POLICIES,
         active_tab=active_tab
     )
 
@@ -312,11 +349,31 @@ def submit():
     department = predict_department(description)
     priority = get_priority_level(description)
 
-    # Intelligently assign to the faculty member in that department with the lowest active workload
+    # 1. RAG Policy & Standards Verification
+    rag_result = evaluate_complaint_acceptability(description, department)
+    hazard_score, hazard_reasons = calculate_hazard_risk_score(description)
+    sla_hours, sla_deadline_dt = calculate_dynamic_sla(priority, department)
+    sla_deadline_str = sla_deadline_dt.strftime('%Y-%m-%d %H:%M:%S')
+    topic_tags = generate_topic_hashtags(description, department)
+
+    # 2. RAG Semantic Similarity & Clustering against active complaints
+    all_existing = execute_query('SELECT id, description, predicted_department, priority_level, status, created_at, rag_cluster_id FROM complaints', fetchall=True) or []
+    similar_list, cluster_id, is_duplicate = find_similar_complaints(description, all_existing)
+    if similar_list:
+        top_match = similar_list[0]
+        if top_match.get('rag_cluster_id'):
+            cluster_id = top_match['rag_cluster_id']
+        else:
+            cluster_id = f"CLUST-{department[:4].upper()}-{top_match['id']}"
+            execute_query("UPDATE complaints SET rag_cluster_id = %s WHERE id = %s", (cluster_id, top_match['id']), commit=True)
+    if not cluster_id:
+        cluster_id = f"CLUST-{department[:4].upper()}-{student['id']}"
+
+    # 3. Workload balancing for departmental faculty officer
     faculty = execute_query('''
         SELECT f.id, f.name, f.department, f.email, COUNT(c.id) AS active_load
         FROM faculty f
-        LEFT JOIN complaints c ON f.id = c.assigned_faculty_id AND c.status NOT IN ('Closed', 'Resolved')
+        LEFT JOIN complaints c ON f.id = c.assigned_faculty_id AND c.status NOT IN ('Closed', 'Resolved', 'Rejected (Policy Violation)')
         WHERE f.department = %s
         GROUP BY f.id, f.name, f.department, f.email
         ORDER BY active_load ASC, f.id ASC
@@ -327,33 +384,66 @@ def submit():
         faculty = execute_query('''
             SELECT f.id, f.name, f.department, f.email, COUNT(c.id) AS active_load
             FROM faculty f
-            LEFT JOIN complaints c ON f.id = c.assigned_faculty_id AND c.status NOT IN ('Closed', 'Resolved')
+            LEFT JOIN complaints c ON f.id = c.assigned_faculty_id AND c.status NOT IN ('Closed', 'Resolved', 'Rejected (Policy Violation)')
+            WHERE f.department = %s
             GROUP BY f.id, f.name, f.department, f.email
             ORDER BY active_load ASC, f.id ASC
             LIMIT 1
-        ''', fetchone=True)
-        if faculty:
-            department = faculty['department']
+        ''', (department,), fetchone=True)
 
-    complaint_id = execute_query(
-        'INSERT INTO complaints (student_id, description, predicted_department, assigned_faculty_id, priority_level, status) VALUES (%s, %s, %s, %s, %s, %s)',
-        (student['id'], description, department, faculty['id'] if faculty else None, priority, 'Pending'),
-        commit=True
-    )
+    # 4. Status determination based on RAG Policy Compliance
+    if rag_result['status'] == 'Policy Violation':
+        status = 'Rejected (Policy Violation)'
+        assigned_fid = None
+    elif rag_result['status'] == 'Conditional':
+        status = 'Conditional (Pending Evidence)'
+        assigned_fid = faculty['id'] if faculty else None
+    else:
+        status = 'Pending'
+        assigned_fid = faculty['id'] if faculty else None
 
+    # 5. Insert Complaint with full RAG metadata
+    complaint_id = execute_query('''
+        INSERT INTO complaints (
+            student_id, description, predicted_department, assigned_faculty_id,
+            priority_level, status, rag_acceptability, rag_policy_score,
+            rag_policy_citation, rag_policy_advisory, rag_cluster_id,
+            sla_deadline, sla_breach_risk, urgency_score, topic_tags, escalation_level
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ''', (
+        student['id'], description, department, assigned_fid,
+        priority, status, rag_result['status'], rag_result['policy_score'],
+        rag_result['citation'], rag_result['advisory_response'], cluster_id,
+        sla_deadline_str, 'Low', hazard_score, topic_tags, 0
+    ), commit=True)
+
+    # 6. Insert clean initial discussion thread entry
     execute_query(
         'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
         (complaint_id, student['name'], 'Student', 'Grievance submitted for review.'),
         commit=True
     )
 
-    faculty_text = f"{faculty['name']} ({faculty['department']})" if faculty else department
-    add_notification(
-        f"Grievance #{complaint_id} was routed to {faculty_text}. Priority: {priority}.",
-        complaint_id,
-        user_id=student['id'],
-        faculty_id=faculty['id'] if faculty else None
-    )
+    if rag_result['status'] == 'Policy Violation':
+        guardrail_msg = f"Policy Verification [REJECTED]: {rag_result['citation']}. Reason: {rag_result['advisory_response']}"
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (complaint_id, 'AI Policy Guardrail', 'System', guardrail_msg),
+            commit=True
+        )
+        add_notification(
+            f"Grievance #{complaint_id} failed policy check under {rag_result['citation']}. Please review advisory.",
+            complaint_id,
+            user_id=student['id']
+        )
+
+        faculty_text = f"{faculty['name']} ({faculty['department']})" if faculty else department
+        add_notification(
+            f"Grievance #{complaint_id} verified under {rag_result['citation']}. Routed to {faculty_text}. Priority: {priority} (SLA: {sla_hours}h).",
+            complaint_id,
+            user_id=student['id'],
+            faculty_id=faculty['id'] if faculty else None
+        )
 
     return redirect(url_for('student_portal', submitted=complaint_id, tab='request'))
 
@@ -382,6 +472,43 @@ def student_add_comment(complaint_id):
             complaint_id,
             faculty_id=complaint.get('assigned_faculty_id')
         )
+    return redirect(url_for('student_portal', tab='status'))
+
+@app.route('/student/escalate/<int:complaint_id>', methods=['POST'])
+@student_required
+def student_escalate(complaint_id):
+    student_id = session.get('student_id')
+    student_name = session.get('student_name', 'Student')
+    reason = request.form.get('escalation_reason', '').strip()
+    if not reason:
+        reason = "Student requested urgent managerial review due to delayed resolution or dissatisfaction."
+
+    comp = execute_query(
+        'SELECT id, assigned_faculty_id, priority_level, status FROM complaints WHERE id = %s AND student_id = %s',
+        (complaint_id, student_id),
+        fetchone=True
+    )
+    if not comp:
+        flash('Complaint not found.', 'danger')
+        return redirect(url_for('student_portal', tab='status'))
+
+    execute_query(
+        "UPDATE complaints SET priority_level = 'High Priority', escalation_level = escalation_level + 1 WHERE id = %s",
+        (complaint_id,),
+        commit=True
+    )
+    execute_query(
+        'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+        (complaint_id, f"{student_name} (Escalation)", 'Student', f"[URGENT CASE ESCALATION]: {reason[:400]}"),
+        commit=True
+    )
+    add_notification(
+        f"🚨 Grievance #{complaint_id} was ESCALATED to High Priority by student: {reason[:80]}",
+        complaint_id,
+        user_id=student_id,
+        faculty_id=comp.get('assigned_faculty_id')
+    )
+    flash(f"Grievance #{complaint_id} has been formally escalated to High Priority. Central Administration and the Department Head have been alerted.", 'warning')
     return redirect(url_for('student_portal', tab='status'))
 
 @app.route('/feedback/<int:complaint_id>', methods=['POST'])
@@ -415,11 +542,12 @@ def submit_feedback(complaint_id):
 
 
 # ==============================================================================
-# MODULE 2: ASSIGNED TASK ROLES (FACULTY OPERATIONS & RESOLUTION DESK)
+# MODULE 2: ASSIGNED TASK ROLES (FACULTY OPERATIONS, RAG CO-PILOT & MASS REPLY)
 # ==============================================================================
 
 @app.route('/faculty')
 @app.route('/assigned')
+@app.route('/assigned_dashboard')
 @faculty_required
 def assigned_dashboard():
     active_faculty_id = session.get('faculty_id')
@@ -435,6 +563,8 @@ def assigned_dashboard():
         SELECT c.id, u.roll_number, u.name AS student_name, c.description, 
                c.predicted_department, c.priority_level, c.status, c.created_at, 
                c.completion_note, c.student_feedback, c.feedback_sentiment, c.assigned_faculty_id, c.closed_at,
+               c.rag_acceptability, c.rag_policy_score, c.rag_policy_citation, c.rag_policy_advisory,
+               c.rag_cluster_id, c.sla_deadline, c.sla_breach_risk, c.urgency_score, c.topic_tags, c.escalation_level,
                f.name AS faculty_name, f.email AS faculty_email 
         FROM complaints c 
         LEFT JOIN users u ON c.student_id = u.id 
@@ -459,6 +589,9 @@ def assigned_dashboard():
     query += " ORDER BY CASE c.priority_level WHEN 'High Priority' THEN 0 ELSE 1 END, c.id DESC"
     complaints = execute_query(query, tuple(params), fetchall=True) or []
 
+    # Map comments, dynamic SLAs and similarity cluster counts
+    cluster_counts = {}
+    cluster_members = {}
     if complaints:
         ids = [c['id'] for c in complaints]
         placeholders = ', '.join(['%s'] * len(ids))
@@ -470,8 +603,30 @@ def assigned_dashboard():
         comments_by_cid = {}
         for cmt in all_comments:
             comments_by_cid.setdefault(cmt['complaint_id'], []).append(cmt)
+        
+        # Calculate cluster sizes across entire department
+        clusters = list({c['rag_cluster_id'] for c in complaints if c.get('rag_cluster_id')})
+        if clusters:
+            c_placeholders = ', '.join(['%s'] * len(clusters))
+            c_rows = execute_query(
+                f"SELECT id, student_id, rag_cluster_id, description, status FROM complaints WHERE rag_cluster_id IN ({c_placeholders})",
+                tuple(clusters),
+                fetchall=True
+            ) or []
+            for r in c_rows:
+                cid = r['rag_cluster_id']
+                cluster_counts[cid] = cluster_counts.get(cid, 0) + 1
+                cluster_members.setdefault(cid, []).append(r)
+
         for comp in complaints:
             comp['comments'] = comments_by_cid.get(comp['id'], [])
+            cid = comp.get('rag_cluster_id')
+            comp['cluster_size'] = cluster_counts.get(cid, 1)
+            comp['cluster_members'] = cluster_members.get(cid, [])
+            sla_h = 6 if comp.get('priority_level') == 'High Priority' else 24
+            risk_lvl, rem_str = evaluate_sla_breach_risk(comp.get('created_at'), sla_h, comp.get('status'))
+            comp['sla_breach_risk'] = risk_lvl
+            comp['sla_remaining_text'] = rem_str
 
     # Officer's Personal Task Stats
     my_all = execute_query("SELECT priority_level, status FROM complaints WHERE assigned_faculty_id = %s", (active_faculty_id,), fetchall=True) or []
@@ -484,13 +639,20 @@ def assigned_dashboard():
         'closed': sum(x['status'] in ('Closed', 'Resolved') for x in my_all)
     }
 
+    # Incident Outbreak detection for officer (any cluster with >= 2 active complaints)
+    active_clusters_list = [
+        {'cluster_id': cid, 'count': cnt, 'members': cluster_members.get(cid, [])}
+        for cid, cnt in cluster_counts.items() if cnt >= 2
+    ]
+
     return render_template(
         'assigned_dashboard.html',
         complaints=complaints,
         stats=stats,
         backend=get_backend_name(),
         current_faculty=current_faculty,
-        selected_status=selected_status
+        selected_status=selected_status,
+        active_clusters=active_clusters_list
     )
 
 @app.route('/faculty/update-status/<int:complaint_id>', methods=['POST'])
@@ -585,8 +747,67 @@ def faculty_add_comment(complaint_id):
         flash('Message sent to the student.', 'success')
     return redirect(url_for('assigned_dashboard'))
 
+@app.route('/faculty/mass-reply', methods=['POST'])
+@faculty_required
+def faculty_mass_reply():
+    cluster_id = request.form.get('cluster_id', '').strip()
+    status = request.form.get('status', 'Completed - Awaiting Feedback').strip()
+    reply_message = request.form.get('reply_message', '').strip()
+    active_faculty_id = session.get('faculty_id')
+    faculty_name = session.get('faculty_name', 'Assigned Officer')
+
+    if not cluster_id or not reply_message:
+        flash('Cluster ID and reply message are required for mass redressal.', 'warning')
+        return redirect(url_for('assigned_dashboard'))
+
+    if status.lower() in ('completed', 'completed - awaiting feedback'):
+        new_status = 'Completed - Awaiting Feedback'
+    elif status.lower() in ('in progress', 'progress'):
+        new_status = 'In Progress'
+    else:
+        new_status = 'Pending'
+
+    complaints = execute_query(
+        "SELECT id, student_id FROM complaints WHERE rag_cluster_id = %s AND status NOT IN ('Closed', 'Resolved')",
+        (cluster_id,),
+        fetchall=True
+    ) or []
+
+    if not complaints:
+        flash(f'No active complaints found in Cluster {cluster_id}.', 'warning')
+        return redirect(url_for('assigned_dashboard'))
+
+    count = 0
+    for comp in complaints:
+        cid = comp['id']
+        sid = comp['student_id']
+        if new_status == 'Completed - Awaiting Feedback':
+            execute_query(
+                'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
+                (new_status, reply_message[:500], cid),
+                commit=True
+            )
+        else:
+            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (new_status, cid), commit=True)
+
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (cid, f"{faculty_name} (Mass Redressal)", 'Faculty', f"[Group Redressal]: {reply_message[:500]}"),
+            commit=True
+        )
+        add_notification(
+            f"Update on your grievance #{cid} via Group Redressal ({cluster_id}): {reply_message[:100]}",
+            cid,
+            user_id=sid
+        )
+        count += 1
+
+    flash(f"⚡ Success! Mass resolution broadcast and status '{new_status}' applied simultaneously to {count} students in Cluster {cluster_id}!", 'success')
+    return redirect(url_for('assigned_dashboard'))
+
+
 # ==============================================================================
-# MODULE 3: ADMIN VIEW (CENTRAL CAMPUS GOVERNANCE & TRIAGE HEADQUARTERS)
+# MODULE 3: ADMIN VIEW (CENTRAL CAMPUS GOVERNANCE, RAG AUDIT & OUTBREAKS)
 # ==============================================================================
 
 @app.route('/admin')
@@ -598,10 +819,9 @@ def admin():
     faculty_list = execute_query('SELECT id, name, department, email FROM faculty ORDER BY department ASC, name ASC', fetchall=True) or []
     departments = sorted(list({f['department'] for f in faculty_list if f.get('department')}))
 
-    # Admin Exclusive: Faculty Active Workload Table
     faculty_workloads = execute_query('''
         SELECT f.id, f.name, f.department, f.email,
-               COUNT(CASE WHEN c.status NOT IN ('Closed', 'Resolved') THEN c.id END) AS active_load,
+               COUNT(CASE WHEN c.status NOT IN ('Closed', 'Resolved', 'Rejected (Policy Violation)') THEN c.id END) AS active_load,
                COUNT(c.id) AS total_handled
         FROM faculty f
         LEFT JOIN complaints c ON f.id = c.assigned_faculty_id
@@ -623,6 +843,8 @@ def admin():
         SELECT c.id, u.roll_number, u.name AS student_name, c.description, 
                c.predicted_department, c.priority_level, c.status, c.created_at, 
                c.completion_note, c.student_feedback, c.feedback_sentiment, c.assigned_faculty_id,
+               c.rag_acceptability, c.rag_policy_score, c.rag_policy_citation, c.rag_policy_advisory,
+               c.rag_cluster_id, c.sla_deadline, c.sla_breach_risk, c.urgency_score, c.topic_tags, c.escalation_level,
                f.name AS faculty_name, f.email AS faculty_email 
         FROM complaints c 
         LEFT JOIN users u ON c.student_id = u.id 
@@ -648,6 +870,8 @@ def admin():
     query += " ORDER BY CASE c.priority_level WHEN 'High Priority' THEN 0 ELSE 1 END, c.id DESC"
     complaints = execute_query(query, tuple(params), fetchall=True) or []
 
+    cluster_counts = {}
+    cluster_members = {}
     if complaints:
         ids = [c['id'] for c in complaints]
         placeholders = ', '.join(['%s'] * len(ids))
@@ -659,19 +883,54 @@ def admin():
         comments_by_cid = {}
         for cmt in all_comments:
             comments_by_cid.setdefault(cmt['complaint_id'], []).append(cmt)
+        
+        clusters = list({c['rag_cluster_id'] for c in complaints if c.get('rag_cluster_id')})
+        if clusters:
+            c_placeholders = ', '.join(['%s'] * len(clusters))
+            c_rows = execute_query(
+                f"SELECT id, student_id, rag_cluster_id, description, status FROM complaints WHERE rag_cluster_id IN ({c_placeholders})",
+                tuple(clusters),
+                fetchall=True
+            ) or []
+            for r in c_rows:
+                cid = r['rag_cluster_id']
+                cluster_counts[cid] = cluster_counts.get(cid, 0) + 1
+                cluster_members.setdefault(cid, []).append(r)
+
         for comp in complaints:
             comp['comments'] = comments_by_cid.get(comp['id'], [])
+            cid = comp.get('rag_cluster_id')
+            comp['cluster_size'] = cluster_counts.get(cid, 1)
+            comp['cluster_members'] = cluster_members.get(cid, [])
+            sla_h = 6 if comp.get('priority_level') == 'High Priority' else 24
+            risk_lvl, rem_str = evaluate_sla_breach_risk(comp.get('created_at'), sla_h, comp.get('status'))
+            comp['sla_breach_risk'] = risk_lvl
+            comp['sla_remaining_text'] = rem_str
 
-    # System-wide Overall Campus Stats
-    all_complaints = execute_query("SELECT priority_level, status FROM complaints", fetchall=True) or []
+    # Campus-wide statistics
+    all_complaints = execute_query("SELECT priority_level, status, rag_acceptability, rag_cluster_id, urgency_score FROM complaints", fetchall=True) or []
+    total_count = len(all_complaints)
+    acceptable_count = sum(1 for x in all_complaints if x.get('rag_acceptability') == 'Acceptable')
+    policy_violations_count = sum(1 for x in all_complaints if x.get('rag_acceptability') == 'Policy Violation')
+    clusters_set = {x.get('rag_cluster_id') for x in all_complaints if x.get('rag_cluster_id')}
+
     stats = {
-        'total': len(all_complaints),
+        'total': total_count,
         'high_priority': sum(x['priority_level'] == 'High Priority' for x in all_complaints),
         'pending': sum(x['status'] == 'Pending' for x in all_complaints),
         'in_progress': sum(x['status'] == 'In Progress' for x in all_complaints),
         'awaiting_feedback': sum(x['status'] == 'Completed - Awaiting Feedback' for x in all_complaints),
-        'resolved': sum(x['status'] in ('Closed', 'Resolved') for x in all_complaints)
+        'resolved': sum(x['status'] in ('Closed', 'Resolved') for x in all_complaints),
+        'policy_pass_rate': round((acceptable_count / total_count * 100), 1) if total_count > 0 else 100.0,
+        'policy_violations': policy_violations_count,
+        'active_clusters': len(clusters_set),
+        'avg_hazard': round(sum(x.get('urgency_score') or 15 for x in all_complaints) / total_count, 1) if total_count > 0 else 15.0
     }
+
+    active_clusters_list = [
+        {'cluster_id': cid, 'count': cnt, 'members': cluster_members.get(cid, [])}
+        for cid, cnt in cluster_counts.items() if cnt >= 2
+    ]
 
     return render_template(
         'admin_dashboard.html',
@@ -685,6 +944,7 @@ def admin():
         selected_dept=selected_dept,
         selected_status=selected_status,
         admin_name=ADMIN_USERNAME,
+        active_clusters=active_clusters_list,
         active_tab=request.args.get('tab', 'triage')
     )
 
@@ -762,12 +1022,10 @@ def update_status(complaint_id):
         flash('Only a completed grievance awaiting student feedback can be finalized by administration.', 'warning')
         return redirect(request.referrer or url_for('admin'))
 
-    # Require student feedback before any administrative closure.
     if not complaint.get('student_feedback') or not complaint['student_feedback'].strip():
         flash(f'Cannot close Grievance #{complaint_id}: Student has not submitted resolution feedback yet.', 'warning')
         return redirect(request.referrer or url_for('admin'))
 
-    # Evaluate sentiment if it has not already been recorded.
     sentiment = complaint.get('feedback_sentiment')
     if not sentiment:
         sentiment, _ = predict_feedback_sentiment(complaint['student_feedback'])
@@ -800,6 +1058,62 @@ def add_comment(complaint_id):
         )
         add_notification(f'Central Administrative update on grievance #{complaint_id}: {message[:120]}', complaint_id, user_id=complaint['student_id'])
     return redirect(request.referrer or url_for('admin'))
+
+@app.route('/admin/mass-reply', methods=['POST'])
+@admin_required
+def admin_mass_reply():
+    cluster_id = request.form.get('cluster_id', '').strip()
+    status = request.form.get('status', 'Completed - Awaiting Feedback').strip()
+    reply_message = request.form.get('reply_message', '').strip()
+
+    if not cluster_id or not reply_message:
+        flash('Cluster ID and reply message are required.', 'warning')
+        return redirect(url_for('admin'))
+
+    if status.lower() in ('completed', 'completed - awaiting feedback'):
+        new_status = 'Completed - Awaiting Feedback'
+    elif status.lower() in ('in progress', 'progress'):
+        new_status = 'In Progress'
+    else:
+        new_status = 'Pending'
+
+    complaints = execute_query(
+        "SELECT id, student_id FROM complaints WHERE rag_cluster_id = %s AND status NOT IN ('Closed', 'Resolved')",
+        (cluster_id,),
+        fetchall=True
+    ) or []
+
+    if not complaints:
+        flash(f'No active complaints found in Cluster {cluster_id}.', 'warning')
+        return redirect(url_for('admin'))
+
+    count = 0
+    for comp in complaints:
+        cid = comp['id']
+        sid = comp['student_id']
+        if new_status == 'Completed - Awaiting Feedback':
+            execute_query(
+                'UPDATE complaints SET status = %s, completion_note = %s WHERE id = %s',
+                (new_status, reply_message[:500], cid),
+                commit=True
+            )
+        else:
+            execute_query('UPDATE complaints SET status = %s WHERE id = %s', (new_status, cid), commit=True)
+
+        execute_query(
+            'INSERT INTO complaint_comments (complaint_id, author_name, author_role, message) VALUES (%s, %s, %s, %s)',
+            (cid, f"Admin ({ADMIN_USERNAME}) [Mass Broadcast]", 'Admin', f"[Group Redressal]: {reply_message[:500]}"),
+            commit=True
+        )
+        add_notification(
+            f"Central Administrative Update on grievance #{cid} (Cluster {cluster_id}): {reply_message[:100]}",
+            cid,
+            user_id=sid
+        )
+        count += 1
+
+    flash(f"⚡ Success! Central administrative mass resolution applied to {count} students in Cluster {cluster_id}!", 'success')
+    return redirect(url_for('admin'))
 
 @app.route('/admin/reassign/<int:complaint_id>', methods=['POST'])
 @admin_required
@@ -850,10 +1164,142 @@ def reassign_complaint(complaint_id):
         )
     return redirect(request.referrer or url_for('admin'))
 
+@app.route('/admin/export-csv')
+@admin_required
+def export_csv():
+    complaints = execute_query('''
+        SELECT c.id, u.roll_number, u.name AS student_name, c.description,
+               c.predicted_department, c.priority_level, c.status,
+               c.rag_acceptability, c.rag_policy_score, c.rag_policy_citation,
+               c.rag_cluster_id, c.sla_deadline, c.sla_breach_risk, c.urgency_score,
+               c.feedback_sentiment, c.created_at, c.closed_at,
+               f.name AS faculty_name
+        FROM complaints c
+        LEFT JOIN users u ON c.student_id = u.id
+        LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+        ORDER BY c.id DESC
+    ''', fetchall=True) or []
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'Ticket ID', 'Roll Number', 'Student Name', 'Department', 'Priority',
+        'Hazard Score', 'RAG Acceptability', 'Policy Citation', 'Compliance Score',
+        'Cluster ID', 'SLA Deadline', 'SLA Risk', 'Status', 'Feedback Sentiment',
+        'Assigned Faculty', 'Created At', 'Closed At', 'Description'
+    ])
+    for c in complaints:
+        writer.writerow([
+            c.get('id'),
+            c.get('roll_number'),
+            c.get('student_name'),
+            c.get('predicted_department'),
+            c.get('priority_level'),
+            c.get('urgency_score') or 15,
+            c.get('rag_acceptability') or 'Acceptable',
+            c.get('rag_policy_citation') or '',
+            c.get('rag_policy_score') or 85.0,
+            c.get('rag_cluster_id') or '',
+            c.get('sla_deadline') or '',
+            c.get('sla_breach_risk') or 'Low',
+            c.get('status'),
+            c.get('feedback_sentiment') or 'Pending',
+            c.get('faculty_name') or 'Unassigned',
+            c.get('created_at'),
+            c.get('closed_at') or 'Open',
+            (c.get('description') or '').replace('\n', ' ')
+        ])
+
+    csv_data = output.getvalue()
+    return Response(
+        csv_data,
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=campus_grievances_dossier.csv'}
+    )
+
+
+# ==============================================================================
+# MODULE 4: RAG REST APIs (LIVE AS-YOU-TYPE PRECHECK & AI DRAFTING)
+# ==============================================================================
+
+@app.route('/api/rag/precheck', methods=['POST'])
+def api_rag_precheck():
+    data = request.get_json(silent=True) or {}
+    description = data.get('description', '').strip()
+    if not description or len(description) < 6:
+        return jsonify({'valid': False, 'message': 'Description too short'})
+
+    dept = predict_department(description)
+    priority = get_priority_level(description)
+    rag_eval = evaluate_complaint_acceptability(description, dept)
+    hazard_score, hazard_reasons = calculate_hazard_risk_score(description)
+    sla_h, _ = calculate_dynamic_sla(priority, dept)
+
+    all_complaints = execute_query('SELECT id, description, predicted_department, priority_level, status FROM complaints LIMIT 200', fetchall=True) or []
+    similar_list, cluster_id, is_duplicate = find_similar_complaints(description, all_complaints)
+
+    return jsonify({
+        'valid': True,
+        'status': rag_eval['status'],
+        'policy_score': rag_eval['policy_score'],
+        'citation': rag_eval['citation'],
+        'verdict_title': rag_eval['verdict_title'],
+        'advisory': rag_eval['advisory_response'],
+        'violation_reasons': rag_eval.get('violation_reasons', []),
+        'predicted_department': dept,
+        'priority': priority,
+        'hazard_score': hazard_score,
+        'hazard_reasons': hazard_reasons,
+        'sla_hours': sla_h,
+        'similar_count': len(similar_list),
+        'cluster_id': cluster_id or f"CLUST-{dept[:4].upper()}-NEW",
+        'is_duplicate': is_duplicate,
+        'similar_preview': similar_list[0]['description'] if similar_list else None
+    })
+
+@app.route('/api/rag/draft-resolution', methods=['GET', 'POST'])
+def api_rag_draft_resolution():
+    cid = request.args.get('id')
+    if not cid and request.is_json:
+        data = request.get_json(silent=True) or {}
+        cid = data.get('id') or data.get('complaint_id')
+    if not cid:
+        cid = request.form.get('id') or request.form.get('complaint_id')
+    if not cid:
+        return jsonify({'error': 'Missing id'}), 400
+    comp = execute_query('SELECT id, description, predicted_department, rag_cluster_id FROM complaints WHERE id = %s', (cid,), fetchone=True)
+    if not comp:
+        return jsonify({'error': 'Not found'}), 404
+
+    cluster_count = 1
+    if comp.get('rag_cluster_id'):
+        cnt_row = execute_query('SELECT COUNT(*) as c FROM complaints WHERE rag_cluster_id = %s', (comp['rag_cluster_id'],), fetchone=True)
+        if cnt_row:
+            cluster_count = cnt_row['c']
+
+    officer_name = session.get('faculty_name') or session.get('admin_user') or "Assigned Authority"
+    draft = generate_rag_resolution_draft(
+        comp['description'],
+        comp['predicted_department'],
+        faculty_name=officer_name,
+        similar_count=cluster_count
+    )
+    return jsonify({
+        'success': True,
+        'draft': draft,
+        'cluster_id': comp.get('rag_cluster_id'),
+        'cluster_size': cluster_count
+    })
+
+@app.route('/api/rag/policies')
+def api_rag_policies():
+    return jsonify({'policies': CAMPUS_POLICIES})
+
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
 
 if __name__ == '__main__':
     app.run(

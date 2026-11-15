@@ -19,8 +19,13 @@
             <div class="text-muted small fw-bold text-uppercase tracking-wider mt-1">
                 Student Grievance System
             </div>
-            <div class="badge bg-light text-secondary border px-3 py-1 mt-2 font-monospace small">
-                Grievance &amp; Service Gateway
+            <div class="d-flex justify-content-center align-items-center gap-2 mt-2">
+                <span class="badge bg-light text-secondary border px-3 py-1 font-monospace small">
+                    Grievance &amp; Service Gateway
+                </span>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="themeToggleBtn" title="Toggle Dark/Light Mode">
+                    <i class="bi bi-moon-stars"></i>
+                </button>
             </div>
         </div>
 
@@ -226,6 +231,17 @@
         document.getElementById('tabBtnStudent')?.addEventListener('click', () => switchRoleTab('student'));
         document.getElementById('tabBtnFaculty')?.addEventListener('click', () => switchRoleTab('faculty'));
         document.getElementById('tabBtnAdmin')?.addEventListener('click', () => switchRoleTab('admin'));
+        const themeBtn = document.getElementById('themeToggleBtn');
+        if (localStorage.getItem('sgs_theme') === 'dark') {
+            document.body.classList.add('dark-mode');
+            if (themeBtn) themeBtn.innerHTML = '<i class="bi bi-sun"></i>';
+        }
+        themeBtn?.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            localStorage.setItem('sgs_theme', isDark ? 'dark' : 'light');
+            themeBtn.innerHTML = isDark ? '<i class="bi bi-sun"></i>' : '<i class="bi bi-moon-stars"></i>';
+        });
     </script>
 </body>
 </html>

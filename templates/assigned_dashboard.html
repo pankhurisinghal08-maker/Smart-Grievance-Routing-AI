@@ -23,6 +23,9 @@
             </div>
 
             <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-light py-1 px-2" id="themeToggleBtn" title="Toggle Dark/Light Mode">
+                    <i class="bi bi-moon-stars"></i>
+                </button>
                 <div class="user-profile-chip">
                     {% if current_faculty %}
                     <i class="bi bi-person-badge-fill text-warning"></i>
@@ -47,9 +50,8 @@
                     <h4 class="mb-0 fw-bold" style="color: var(--lpu-navy);">
                         <i class="bi bi-person-workspace me-2" style="color: #059669;"></i>Assigned Teachers Workspace
                     </h4>
-                    <small class="text-muted">Review and progress your assigned grievances, manage task states (completed, waited, in-progress), and message students directly.</small>
+                    <small class="text-muted">RAG Resolution Co-Pilot &middot; One-Click Similar Complaints Mass Redressal &middot; Direct Student Feedback Tracker</small>
                 </div>
-
             </div>
         </div>
     </div>
@@ -90,7 +92,7 @@
                         <div class="text-warning small fw-bold text-uppercase tracking-wider">Master Combined Work Desk</div>
                         <h4 class="fw-bold mb-0 text-white">All Assigned Personnel &amp; Departmental Officers</h4>
                         <div class="text-white-50 small mt-1">
-                            Showing unified grievance queue across all {{ faculty_list|length }} university department heads
+                            Showing unified grievance queue across all university department heads
                         </div>
                         {% endif %}
                     </div>
@@ -149,6 +151,30 @@
             </div>
         </div>
 
+        <!-- High-Density Incident Outbreak & Group Redressal Banner -->
+        {% if active_clusters %}
+        <div class="alert alert-warning border border-warning shadow-sm rounded-3 mb-4 p-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h6 class="fw-bold mb-1 text-dark">
+                        <i class="bi bi-diagram-3-fill text-warning me-2"></i>
+                        Similar Grievance Outbreak Detected ({{ active_clusters|length }} Active Incident Clusters)
+                    </h6>
+                    <small class="text-muted">Multiple students reported overlapping issues in this department. Use RAG Group Redressal to broadcast resolution and update all tickets simultaneously.</small>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                {% for cl in active_clusters %}
+                <button type="button" class="btn btn-sm btn-dark d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#massReplyModal{{ cl.cluster_id|replace('-', '') }}">
+                    <span class="badge bg-warning text-dark">{{ cl.count }} Students</span>
+                    <span>Cluster: {{ cl.cluster_id }}</span>
+                    <i class="bi bi-broadcast"></i> One-Click Group Reply
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Filter Workspaces Card -->
         <div class="rms-card mb-4">
             <div class="p-3">
@@ -190,16 +216,6 @@
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <span class="rms-ticket-id">Grievance Ticket #{{ c.id }}</span>
                     <span class="lpu-badge-dept">
-                        {% if c.predicted_department == 'IT' %}<i class="bi bi-laptop"></i>
-                        {% elif c.predicted_department == 'Maintenance' %}<i class="bi bi-tools"></i>
-                        {% elif c.predicted_department == 'Cafeteria' %}<i class="bi bi-cup-hot"></i>
-                        {% elif c.predicted_department == 'Security' %}<i class="bi bi-shield-shaded"></i>
-                        {% elif c.predicted_department == 'Finance' %}<i class="bi bi-cash-stack"></i>
-                        {% elif c.predicted_department == 'Library' %}<i class="bi bi-book"></i>
-                        {% elif c.predicted_department == 'Discipline' %}<i class="bi bi-award"></i>
-                        {% elif c.predicted_department == 'Examination' %}<i class="bi bi-journal-check"></i>
-                        {% else %}<i class="bi bi-building"></i>
-                        {% endif %}
                         {{ c.predicted_department }}
                     </span>
                     <span class="lpu-badge-faculty">
@@ -212,14 +228,32 @@
                     {% else %}
                     <span class="lpu-badge-normal">Normal</span>
                     {% endif %}
+
+
                 </div>
-                <div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    {% if c.sla_breach_risk == 'Breached' %}
+                    <span class="badge bg-danger"><i class="bi bi-exclamation-octagon-fill me-1"></i> SLA Breached</span>
+                    {% elif c.sla_breach_risk == 'High' %}
+                    <span class="badge bg-danger bg-opacity-75"><i class="bi bi-stopwatch-fill me-1"></i> SLA Risk: High</span>
+                    {% else %}
+                    <span class="badge bg-light text-secondary border"><i class="bi bi-stopwatch me-1"></i> SLA: {{ c.sla_remaining_text }}</span>
+                    {% endif %}
+
+                    {% if c.cluster_size > 1 %}
+                    <button type="button" class="btn btn-sm btn-warning text-dark py-0 px-2 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#massReplyModal{{ c.rag_cluster_id|replace('-', '') }}" title="One-click mass resolution for all students with similar complaints">
+                        <i class="bi bi-broadcast me-1"></i> Group Redressal ({{ c.cluster_size }} Students)
+                    </button>
+                    {% endif %}
+
                     {% if c.status == 'Closed' or c.status == 'Resolved' %}
                     <span class="lpu-badge-closed"><i class="bi bi-check2-all me-1"></i> Closed &amp; Verified</span>
                     {% elif c.status == 'Completed - Awaiting Feedback' %}
                     <span class="lpu-badge-awaiting"><i class="bi bi-patch-question me-1"></i> Completed - Awaiting Feedback</span>
                     {% elif c.status == 'In Progress' %}
                     <span class="lpu-badge-progress"><i class="bi bi-hourglass-split me-1"></i> In Progress</span>
+                    {% elif c.status == 'Rejected (Policy Violation)' %}
+                    <span class="badge bg-danger"><i class="bi bi-shield-x me-1"></i> Rejected (Policy Violation)</span>
                     {% else %}
                     <span class="lpu-badge-pending"><i class="bi bi-clock me-1"></i> Pending Review</span>
                     {% endif %}
@@ -227,10 +261,41 @@
             </div>
 
             <!-- Emergency Alert Strip if High Priority -->
-            {% if c.priority_level == 'High Priority' and c.status != 'Closed' and c.status != 'Resolved' %}
+            {% if c.priority_level == 'High Priority' and c.status not in ['Closed', 'Resolved'] %}
             <div class="urgent-alert-stripe">
                 <i class="bi bi-exclamation-octagon-fill fs-5"></i>
                 <span><strong>URGENT CASE ALERT:</strong> This grievance has been flagged high-priority. Please inspect immediately and respond with resolution steps.</span>
+            </div>
+            {% endif %}
+
+            <!-- Group Redressal Outbreak Notice -->
+            {% if c.cluster_size > 1 %}
+            <div class="alert alert-warning py-2 px-3 small rounded-2 mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2 border border-warning">
+                <div>
+                    <i class="bi bi-people-fill text-warning-emphasis fs-6 me-1"></i>
+                    <strong>Similar Incident Outbreak:</strong> <strong>{{ c.cluster_size }} students</strong> have filed similar complaints regarding this issue.
+                </div>
+                <button type="button" class="btn btn-sm btn-dark py-0 px-2 fw-bold" data-bs-toggle="modal" data-bs-target="#massReplyModal{{ c.rag_cluster_id|replace('-', '') }}">
+                    <i class="bi bi-broadcast me-1"></i> Open Group Redressal
+                </button>
+            </div>
+            {% endif %}
+
+            <!-- RAG Policy Clearance Details -->
+            {% if c.rag_policy_citation %}
+            <div class="p-2 bg-light rounded border mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <small class="text-secondary fw-semibold">
+                    <i class="bi bi-shield-check text-success me-1"></i>
+                    RAG Standard Terms Citation: <strong>{{ c.rag_policy_citation }}</strong>
+                </small>
+                <div>
+                    <span class="badge bg-success bg-opacity-10 text-success border small">
+                        Acceptability Score: {{ c.rag_policy_score or 85.0 }}%
+                    </span>
+                    <span class="badge bg-secondary bg-opacity-10 text-secondary border small ms-1">
+                        Hazard Score: {{ c.urgency_score or 15 }}/100
+                    </span>
+                </div>
             </div>
             {% endif %}
 
@@ -337,7 +402,13 @@
                                     </select>
                                 </div>
                                 <div class="mb-3">
-                                    <textarea name="completion_note" maxlength="500" rows="2" class="form-control form-control-sm" placeholder="Resolution summary / task progress notes...">{{ c.completion_note or '' }}</textarea>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <small class="text-muted fw-bold">Resolution Notes / Action Taken</small>
+                                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 btn-ai-draft" data-ticket-id="{{ c.id }}" data-target="#note-{{ c.id }}">
+                                            <i class="bi bi-stars me-1"></i> Draft with RAG
+                                        </button>
+                                    </div>
+                                    <textarea id="note-{{ c.id }}" name="completion_note" maxlength="500" rows="3" class="form-control form-control-sm" placeholder="Resolution summary / task progress notes...">{{ c.completion_note or '' }}</textarea>
                                 </div>
                                 <button type="submit" class="btn btn-sm btn-primary fw-semibold w-100">
                                     <i class="bi bi-arrow-repeat me-1"></i> Update Task Status
@@ -356,7 +427,7 @@
                                     </label>
                                 </div>
                                 <div class="mb-3">
-                                    <textarea id="student-message-{{ c.id }}" name="message" required maxlength="500" rows="3" class="form-control form-control-sm" placeholder="Write an update or instruction directly for the student..."></textarea>
+                                    <textarea id="student-message-{{ c.id }}" name="message" required maxlength="500" rows="4" class="form-control form-control-sm" placeholder="Write an update or instruction directly for the student..."></textarea>
                                 </div>
                                 <button type="submit" class="btn btn-sm btn-success text-nowrap fw-semibold w-100">
                                     <i class="bi bi-send-fill me-1"></i> Send Message to Student
@@ -375,6 +446,54 @@
             </div>
             {% endif %}
         </article>
+
+        <!-- Mass Reply Modal for Cluster if present -->
+        {% if c.rag_cluster_id %}
+        <div class="modal fade" id="massReplyModal{{ c.rag_cluster_id|replace('-', '') }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-dark text-white">
+                        <h6 class="modal-title fw-bold">
+                            <i class="bi bi-broadcast me-2 text-warning"></i>Group Redressal: Cluster {{ c.rag_cluster_id }}
+                        </h6>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form action="/faculty/mass-reply" method="POST">
+                        <input type="hidden" name="cluster_id" value="{{ c.rag_cluster_id }}">
+                        <div class="modal-body">
+                            <div class="alert alert-info py-2 px-3 small mb-3">
+                                <strong>Multi-Student Group Redressal:</strong> This broadcast applies simultaneously to all <strong>{{ c.cluster_size }}</strong> student tickets linked to this incident cluster.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-dark">Select Unified Progress Status for All Students</label>
+                                <select name="status" class="form-select form-select-sm" required>
+                                    <option value="Completed - Awaiting Feedback">&#10004; Mark Completed for All Students (Request Feedback)</option>
+                                    <option value="In Progress">&#9881; Mark In Progress for All Students</option>
+                                    <option value="Pending">&#9203; Mark Waited / Pending Action</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label small fw-bold text-dark mb-0">Broadcast Resolution Message / Remarks</label>
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 btn-cluster-draft" data-ticket-id="{{ c.id }}" data-target="#cluster-msg-{{ c.rag_cluster_id|replace('-', '') }}">
+                                        <i class="bi bi-stars me-1"></i> Auto-Draft with RAG
+                                    </button>
+                                </div>
+                                <textarea id="cluster-msg-{{ c.rag_cluster_id|replace('-', '') }}" name="reply_message" rows="4" class="form-control form-control-sm" placeholder="Write unified resolution steps addressing all affected students..." required></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-sm btn-primary fw-bold">
+                                <i class="bi bi-broadcast me-1"></i> Broadcast to All {{ c.cluster_size }} Students
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         {% else %}
         <div class="rms-card text-center py-5">
             <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
@@ -389,13 +508,59 @@
         {% endfor %}
     </main>
 
-    <!-- Client-side Fast Live Search Script -->
+    <!-- Bootstrap 5 Bundle JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Client-side Fast Live Search & RAG Draft Script -->
     <script>
+        // Live search
         document.getElementById('assignedSearchInput')?.addEventListener('input', function(e) {
             const query = e.target.value.toLowerCase().trim();
             document.querySelectorAll('.assigned-complaint-card').forEach(card => {
                 const text = card.innerText.toLowerCase();
                 card.style.display = text.includes(query) ? '' : 'none';
+            });
+        });
+
+        // Theme Toggle
+        const themeBtn = document.getElementById('themeToggleBtn');
+        if (localStorage.getItem('sgs_theme') === 'dark') {
+            document.body.classList.add('dark-mode');
+            if (themeBtn) themeBtn.innerHTML = '<i class="bi bi-sun"></i>';
+        }
+        themeBtn?.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            localStorage.setItem('sgs_theme', isDark ? 'dark' : 'light');
+            themeBtn.innerHTML = isDark ? '<i class="bi bi-sun"></i>' : '<i class="bi bi-moon-stars"></i>';
+        });
+
+        // AI Draft Resolution with RAG
+        document.querySelectorAll('.btn-ai-draft, .btn-cluster-draft').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const ticketId = this.getAttribute('data-ticket-id');
+                const targetSelector = this.getAttribute('data-target');
+                const targetTextarea = document.querySelector(targetSelector);
+                if (!ticketId || !targetTextarea) return;
+
+                const originalBtnText = this.innerHTML;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Synthesizing RAG Draft...';
+                this.disabled = true;
+
+                try {
+                    const res = await fetch('/api/rag/draft-resolution?id=' + ticketId);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.draft) {
+                            targetTextarea.value = data.draft;
+                        }
+                    }
+                } catch (err) {
+                    console.error("AI Draft error:", err);
+                } finally {
+                    this.innerHTML = originalBtnText;
+                    this.disabled = false;
+                }
             });
         });
     </script>

@@ -94,44 +94,120 @@ def load_model():
         except Exception as e:
             print(f"[Model Warning] Could not load saved model ({e}). Retraining...")
 
-    # Auto-train if saved model doesn't exist or failed to load
     try:
         return train_model()
     except Exception as e:
         print(f"[Model Error] Auto-train failed: {e}")
         return None
 
+def has_intent(text, keywords):
+    """Check if any keyword or phrase appears in text with word boundary safety for single words."""
+    for kw in keywords:
+        if ' ' in kw or '-' in kw:
+            if kw in text:
+                return True
+        else:
+            if re.search(r'\b' + re.escape(kw) + r'\b', text):
+                return True
+    return False
+
 def predict_department(text):
-    """Predict the department for a given complaint text, guaranteeing a valid campus department."""
+    """Predict the department for a given complaint text with high-precision semantic intent verification."""
     clean = normalize_text(text)
     if not clean:
         return "Maintenance"
 
-    model = load_model()
-    if model is None:
-        # Heuristic fallback if model unavailable
-        if any(w in clean for w in ['exam', 'examination', 'marksheet', 'grade card', 'hall ticket', 'admit card', 're-evaluation', 'reappear']):
-            return 'Examination'
-        if any(w in clean for w in ['wifi', 'laptop', 'portal', 'pc', 'login', 'email', 'network']):
-            return 'IT'
-        if any(w in clean for w in ['food', 'canteen', 'lunch', 'counter', 'coffee', 'snack']):
-            return 'Cafeteria'
-        if any(w in clean for w in ['guard', 'gate', 'theft', 'stolen', 'suspicious', 'vehicle']):
-            return 'Security'
-        if any(w in clean for w in ['fee', 'receipt', 'refund', 'fine', 'scholarship', 'finance']):
-            return 'Finance'
-        if any(w in clean for w in ['book', 'library', 'catalog', 'reading room']):
-            return 'Library'
-        if any(w in clean for w in ['fight', 'ragging', 'abuse', 'harass', 'discipline', 'misbehavior']):
-            return 'Discipline'
-        return "Maintenance"
+    t = clean.lower()
 
-    try:
-        prediction = model.predict([clean])
-        predicted_dept = str(prediction[0]).strip()
-        if predicted_dept in VALID_DEPARTMENTS:
-            return predicted_dept
-        return "Maintenance"
-    except Exception as e:
-        print(f"[Model Error] Prediction failed for input '{text}': {e}")
-        return "Maintenance"
+    # 1. Maintenance Intent (Plumbing, sanitation, electrical, civil, furniture, cleaning)
+    # Checked first with high priority even if words like 'warden' appear
+    if has_intent(t, [
+        'toilet', 'washroom', 'flush', 'plumb', 'plumbing', 'pipe', 'leak', 'leakage', 'tap', 'sink', 'drain', 'sewage',
+        'geyser', 'cooler', 'water supply', 'dirty water', 'water filter', 'choke', 'blocked',
+        'clean toilet', 'cleaning toilet', 'bathroom', 'sanitation', 'restroom',
+        'ac not', 'air condition', 'switchboard', 'socket', 'fuse', 'power cut', 'spark', 'sparks',
+        'light not', 'fan not', 'bulb', 'wiring', 'short circuit',
+        'broken door', 'broken window', 'ceiling', 'seepage', 'elevator', 'lift stuck',
+        'furniture', 'bench', 'chair', 'bed broken', 'pest control', 'mosquito'
+    ]):
+        if not has_intent(t, ['stolen', 'theft', 'someone opened', 'intruder', 'trespass']):
+            return 'Maintenance'
+
+    # 2. Security Intent (Unauthorized entry, stolen items, guard, CCTV, gate)
+    if has_intent(t, [
+        'opened my room', 'without permission', 'entered my room', 'intruder', 'trespass',
+        'unauthorized entry', 'unauthorized access', 'stranger in hostel', 'broke into my room',
+        'someone entered', 'room privacy', 'unlocked my room', 'unlocked door',
+        'stolen', 'theft', 'robbery', 'someone stole', 'lost laptop', 'stolen phone', 'stolen bicycle',
+        'cycle stolen', 'wallet stolen', 'bag stolen', 'locker broken', 'missing belongings',
+        'security guard', 'gate security', 'gate pass', 'cctv', 'surveillance', 'frisking',
+        'dark streetlight', 'street light on campus road', 'patrol', 'lost id card', 'sos'
+    ]):
+        return 'Security'
+
+    # 3. IT Intent (WiFi, internet, portals, UMS, LMS, servers, computers)
+    if has_intent(t, [
+        'wifi', 'wi-fi', 'internet', 'lan', 'router', 'broadband', 'network', 'ip address',
+        'portal', 'ums', 'lms', 'server', 'login', 'password', 'reset password', 'credential',
+        '500 error', '404 error', 'website down', 'student email', 'biometric attendance error',
+        'lab computer', 'pc in lab', 'projector in lab', 'software install'
+    ]):
+        return 'IT'
+
+    # 4. Cafeteria Intent (Mess, food, canteen, meals, hygiene)
+    if has_intent(t, [
+        'mess', 'canteen', 'cafeteria', 'food', 'lunch', 'dinner', 'breakfast', 'meal',
+        'stale food', 'uncooked food', 'cockroach in food', 'insect in food', 'hair in food',
+        'food poisoning', 'sour milk', 'food hygiene', 'mess menu', 'canteen vendor',
+        'canteen charged twice', 'mess food'
+    ]):
+        return 'Cafeteria'
+
+    # 5. Finance Intent (Fees, refunds, receipts, challan, accounts)
+    if has_intent(t, [
+        'fee', 'fees', 'tuition', 'fee receipt', 'fee challan', 'late fine', 'fine waiver',
+        'scholarship', 'education loan', 'caution money', 'security deposit refund',
+        'payment deducted', 'double payment', 'bank transaction', 'account balance', 'utr'
+    ]):
+        return 'Finance'
+
+    # 6. Examination Intent (Exams, marks, admit card, hall ticket)
+    if has_intent(t, [
+        'exam', 'examination', 'admit card', 'hall ticket', 'date sheet', 'datesheet',
+        'internal marks', 'grade card', 'marksheet', 're-evaluation', 'reappear',
+        'mid term', 'end term', 'exam clash', 'scribes'
+    ]):
+        return 'Examination'
+
+    # 7. Library Intent (Books, circulation, library fine)
+    if has_intent(t, [
+        'library', 'book', 'textbook', 'journal', 'library fine', 'overdue fine',
+        'borrow book', 'return book', 'reading hall', 'reading room', 'rfid gate',
+        'digital library', 'ieee'
+    ]):
+        return 'Library'
+
+    # 8. Discipline Intent (Staff conduct, hospital/dispensary, proctorial, ragging, harassment, misconduct)
+    if has_intent(t, [
+        'hospital', 'hospital staff', 'dispensary', 'clinic', 'medical staff', 'doctor', 'nurse', 'health center',
+        'staff is', 'staff are', 'staff was', 'staff were', 'rude staff', 'annoying staff', 'staff misbehavior', 'staff misconduct',
+        'annoying', 'rude', 'arrogant', 'unprofessional', 'misbehavior', 'misconduct', 'bad behavior', 'uncooperative',
+        'ragging', 'harass', 'harassment', 'bully', 'bullying', 'abuse', 'abusive',
+        'fight', 'fighting', 'violence', 'threat', 'threatening', 'assault',
+        'loud music at night', 'shouting in corridor', 'smoking in hostel', 'alcohol',
+        'drugs in room', 'roommate dispute', 'quarrel', 'defamation', 'eve teasing'
+    ]):
+        return 'Discipline'
+
+    # Fallback to Trained Machine Learning Model
+    model = load_model()
+    if model is not None:
+        try:
+            prediction = model.predict([clean])
+            predicted_dept = str(prediction[0]).strip()
+            if predicted_dept in VALID_DEPARTMENTS:
+                return predicted_dept
+        except Exception as e:
+            print(f"[Model Error] Prediction failed for input '{text}': {e}")
+
+    return "Maintenance"

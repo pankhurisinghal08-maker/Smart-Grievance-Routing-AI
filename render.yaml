@@ -1,8 +1,17 @@
 services:
   - type: web
-    name: grievance-department-classifier
+    name: smart-grievance-routing-ai
     runtime: python
     plan: free
-    buildCommand: pip install --no-cache-dir -r requirements.txt && python -c "from model.nlp_model import train_model; train_model()"
-    startCommand: gunicorn model_api:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
-    healthCheckPath: /health
+    buildCommand: pip install --no-cache-dir -r requirements.txt && python -c "from model.nlp_model import train_model; train_model(); from model.sentiment_model import train_sentiment_model; train_sentiment_model()"
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /login
+    envVars:
+      - key: DB_TYPE
+        value: sqlite
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        value: admin123
+      - key: SECRET_KEY
+        value: grievance-super-secure-key-2026
