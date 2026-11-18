@@ -14,7 +14,8 @@ from model.rag_engine import (
     list_policy_documents,
     add_policy_document,
     delete_policy_document,
-    retrieve_policies
+    retrieve_policies,
+    is_gemini_configured
 )
 from database.db import execute_query, get_backend_name
 
@@ -333,7 +334,8 @@ def student_portal():
         history=history,
         alerts=alerts,
         result=result,
-        active_tab=active_tab
+        active_tab=active_tab,
+        gemini_enabled=is_gemini_configured()
     )
 
 @app.route('/submit', methods=['POST'])
@@ -1061,8 +1063,23 @@ def api_chat():
 
     student_id = session.get('student_id') if session.get('role') == 'student' else None
     student_name = session.get('student_name') if session.get('role') == 'student' else None
-    result = generate_chatbot_response(message, student_id=student_id, student_name=student_name)
+    prev_id = session.get('chat_interaction_id')
+
+    result = generate_chatbot_response(
+        message,
+        student_id=student_id,
+        student_name=student_name,
+        previous_interaction_id=prev_id
+    )
+    if result.get('interaction_id'):
+        session['chat_interaction_id'] = result['interaction_id']
     return jsonify(result)
+
+
+@app.route('/api/chat/reset', methods=['POST'])
+def api_chat_reset():
+    session.pop('chat_interaction_id', None)
+    return jsonify({'reset': True})
 
 
 @app.route('/api/rag/query', methods=['POST'])

@@ -77,6 +77,10 @@ HOST=127.0.0.1
 PORT=5000
 ADMIN_USERNAME=Pankhuri
 ADMIN_PASSWORD=Pankhuri1007
+
+# Optional: Add a Gemini API key for conversational RAG chatbot (auto-falls back to local RAG if omitted)
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-4-hydrogen
 ```
 
 ### 3. Initialize & Train AI Models (Auto-trained on startup)

@@ -7,6 +7,7 @@ stored in MySQL (`rag_documents` with TF-IDF embeddings) and powers:
 """
 
 import json
+import os
 import re
 import uuid
 import numpy as np
@@ -16,6 +17,31 @@ from sklearn.metrics.pairwise import cosine_similarity
 from database.db import execute_query
 from model.nlp_model import normalize_text, predict_department_with_confidence
 from model.rules import calculate_urgency
+
+_gemini_client = None
+_gemini_cached_key = None
+
+
+def _get_gemini_client():
+    """Return an initialized google-genai Client if GEMINI_API_KEY is configured, else None."""
+    global _gemini_client, _gemini_cached_key
+    api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    if not api_key or api_key.lower().startswith("your_"):
+        return None
+    if _gemini_client is not None and _gemini_cached_key == api_key:
+        return _gemini_client
+    try:
+        from google import genai
+        _gemini_client = genai.Client(api_key=api_key)
+        _gemini_cached_key = api_key
+        return _gemini_client
+    except Exception as e:
+        print(f"[Gemini Warning] Could not initialize google-genai client: {e}")
+        return None
+
+
+def is_gemini_configured():
+    return _get_gemini_client() is not None
 
 
 # ==============================================================================
@@ -699,10 +725,127 @@ def _extract_relevant_sentences(content, query, max_sentences=3):
     return " ".join(chosen)
 
 
-def generate_chatbot_response(user_message, student_id=None, student_name=None):
+def _build_rag_context_for_gemini(user_message, local_result, student_id=None, student_name=None):
+    """Assemble grounded university policy docs, ML routing/urgency analysis, and live student tickets for Gemini."""
+    sections = []
+
+    if student_name:
+        sections.append(f"Logged-in Student: {student_name}")
+
+    # 1. Retrieved University Policy Documents (including Admin-uploaded circulars)
+    docs = retrieve_policies(user_message, top_k=3)
+    if docs:
+        pol_lines = []
+        for d in docs:
+            pol_lines.append(
+                f"- [{d['department']}] {d['title']} ({d['citation']}): {d['content'][:600]}"
+            )
+        sections.append("Retrieved University Policies & Rules:\n" + "\n".join(pol_lines))
+
+    # 2. ML Department Routing & Urgency Score Analysis
+    analysis = local_result.get("analysis")
+    if analysis:
+        alt_part = ""
+        if analysis.get("alternatives"):
+            alt_part = " | Alternatives: " + ", ".join(
+                f"{a['department']} ({a['confidence']}%)" for a in analysis["alternatives"]
+            )
+        sections.append(
+            "AI Grievance Triage Analysis:\n"
+            f"- Predicted Department: {analysis['department']} ({analysis['confidence']}% confidence{alt_part})\n"
+            f"- Urgency Score: {analysis['urgency_score']}/100 ({analysis['priority']})\n"
+            f"- Policy Status: {analysis.get('policy_status', 'Acceptable')} | Citation: {analysis.get('citation', '')}"
+        )
+
+    # 3. Live Student Ticket Status from MySQL (if student is logged in)
+    if student_id:
+        try:
+            rows = execute_query(
+                """SELECT c.id, c.predicted_department, c.priority_level, c.urgency_score, c.status,
+                          c.completion_note, c.created_at, f.name AS faculty_name
+                   FROM complaints c
+                   LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+                   WHERE c.student_id = %s
+                   ORDER BY c.id DESC LIMIT 5""",
+                (student_id,),
+                fetchall=True
+            ) or []
+            if rows:
+                t_lines = []
+                for r in rows:
+                    officer = r.get("faculty_name") or f"{r['predicted_department']} Desk"
+                    note = f" | Note: {r['completion_note'][:120]}" if r.get("completion_note") else ""
+                    t_lines.append(
+                        f"- Ticket #{r['id']}: Dept={r['predicted_department']}, Status={r['status']}, "
+                        f"Priority={r['priority_level']} ({r.get('urgency_score') or 25}/100), Officer={officer}{note}"
+                    )
+                sections.append("Student's Recent Grievance Tickets (Live MySQL):\n" + "\n".join(t_lines))
+            else:
+                sections.append("Student's Recent Grievance Tickets: None submitted yet.")
+        except Exception:
+            pass
+
+    return "\n\n".join(sections)
+
+
+def _call_gemini_rag(user_message, context_block, previous_interaction_id=None):
+    """Call Gemini Interactions API grounded on retrieved RAG context; returns (text, interaction_id) or (None, None)."""
+    client = _get_gemini_client()
+    if client is None:
+        return None, None
+
+    model_name = (os.getenv("GEMINI_MODEL") or "gemini-4-hydrogen").strip() or "gemini-4-hydrogen"
+    system_instruction = (
+        "You are the official LPU (Lovely Professional University) AI Student Grievance & Policy Assistant. "
+        "Answer clearly, politely, and concisely (under 140 words) using ONLY the grounded university policies, "
+        "uploaded circulars, AI routing analysis, and live student ticket records provided in the context. "
+        "Always cite the exact policy citation when answering policy/rule questions. "
+        "Never invent university rules, fees, or ticket statuses that are not in the context. "
+        "If the student describes a valid campus issue, briefly state the predicted department, confidence %, "
+        "urgency score (0-100), applicable policy, and let them know they can click 'Fill in Grievance Form' below."
+    )
+
+    prompt_input = (
+        f"[GROUNDED CAMPUS CONTEXT]\n{context_block}\n\n"
+        f"[STUDENT MESSAGE]\n{user_message}"
+    )
+
+    kwargs = {
+        "model": model_name,
+        "input": prompt_input,
+        "system_instruction": system_instruction,
+        "generation_config": {"temperature": 0.4, "max_output_tokens": 1500},
+        "timeout": 30,
+    }
+    if previous_interaction_id:
+        kwargs["previous_interaction_id"] = previous_interaction_id
+
+    try:
+        interaction = client.interactions.create(**kwargs)
+        text = (interaction.output_text or "").strip()
+        if text:
+            return text, interaction.id
+        return None, None
+    except Exception as e:
+        # Retry once without previous_interaction_id in case the stored interaction expired
+        if previous_interaction_id:
+            try:
+                kwargs.pop("previous_interaction_id", None)
+                interaction = client.interactions.create(**kwargs)
+                text = (interaction.output_text or "").strip()
+                if text:
+                    return text, interaction.id
+            except Exception as retry_err:
+                print(f"[Gemini Fallback] Interactions API error ({retry_err}); using local RAG response.")
+                return None, None
+        print(f"[Gemini Fallback] Interactions API error ({e}); using local RAG response.")
+        return None, None
+
+
+def _generate_local_chatbot_response(user_message, student_id=None, student_name=None):
     """
-    Conversational AI Student Assistant powered by local RAG, ML classifier,
-    Urgency Scorer (0-100), and live MySQL ticket lookup.
+    Deterministic offline RAG Student Assistant powered by local TF-IDF RAG,
+    ML classifier, Urgency Scorer (0-100), and live MySQL ticket lookup.
     """
     msg = (user_message or "").strip()
     if not msg:
@@ -905,3 +1048,46 @@ def generate_chatbot_response(user_message, student_id=None, student_name=None):
         },
         "suggested_grievance": msg if len(msg) >= 15 else None
     }
+
+
+def generate_chatbot_response(user_message, student_id=None, student_name=None, previous_interaction_id=None):
+    """
+    Hybrid RAG + Gemini AI Student Assistant:
+      1. Runs local RAG retrieval, ML classification, Urgency Scoring (0-100), and MySQL ticket lookup.
+      2. If GEMINI_API_KEY is configured, synthesizes a natural multi-turn response via Gemini Interactions API
+         strictly grounded on the retrieved university policies and live ticket data.
+      3. Automatically falls back to the local RAG response if no API key is set or the API is unreachable.
+    """
+    local_result = _generate_local_chatbot_response(
+        user_message,
+        student_id=student_id,
+        student_name=student_name
+    )
+
+    msg = (user_message or "").strip()
+    if not msg:
+        local_result["powered_by"] = "local-rag"
+        local_result["interaction_id"] = previous_interaction_id
+        return local_result
+
+    if is_gemini_configured():
+        context_block = _build_rag_context_for_gemini(
+            msg,
+            local_result,
+            student_id=student_id,
+            student_name=student_name
+        )
+        gemini_text, new_interaction_id = _call_gemini_rag(
+            msg,
+            context_block,
+            previous_interaction_id=previous_interaction_id
+        )
+        if gemini_text:
+            local_result["reply"] = gemini_text
+            local_result["powered_by"] = "gemini-rag"
+            local_result["interaction_id"] = new_interaction_id
+            return local_result
+
+    local_result["powered_by"] = "local-rag"
+    local_result["interaction_id"] = previous_interaction_id
+    return local_result

@@ -515,39 +515,97 @@
         </section>
     </main>
 
-    <!-- Floating AI Student Assistance Chatbot (RAG + Live Routing + Ticket Status) -->
+    <!-- Floating AI Student Assistance Chatbot (Gemini + RAG) -->
     <button type="button" id="chatFabBtn" class="lpu-chat-fab" aria-label="Open AI Student Assistant">
+        <span class="lpu-chat-fab-dot" aria-hidden="true"></span>
         <i class="bi bi-robot fs-5 text-warning"></i>
         <span>AI Assistant</span>
     </button>
 
     <aside id="chatWidget" class="lpu-chat-widget d-none" aria-label="LPU AI Student Assistant">
+        <!-- Rich Chatbot Header -->
         <div class="lpu-chat-header">
-            <div class="d-flex align-items-center gap-2">
-                <i class="bi bi-robot fs-5 text-warning"></i>
-                <div>
-                    <div class="fw-bold small lh-1">LPU AI Student Assistant</div>
-                    <small class="text-white-50" style="font-size: 0.7rem;">University Rules RAG &middot; Grievance Helper</small>
+            <div class="d-flex align-items-center gap-2 min-w-0">
+                <div class="lpu-chat-avatar-hdr">
+                    <i class="bi bi-robot"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="fw-bold small lh-sm text-truncate">LPU AI Student Assistant</div>
+                    <div class="lpu-chat-status-pill" id="chatEngineStatus">
+                        <span class="lpu-chat-status-dot {% if not gemini_enabled %}local{% endif %}" id="chatStatusDot"></span>
+                        <span id="chatStatusText">{% if gemini_enabled %}Gemini AI + Policy RAG{% else %}Local Policy RAG{% endif %}</span>
+                    </div>
                 </div>
             </div>
-            <button type="button" id="chatCloseBtn" class="btn btn-sm text-white p-0 px-1" aria-label="Close chat">
-                <i class="bi bi-x-lg"></i>
+            <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                <button type="button" id="chatPolicyBtn" class="lpu-chat-hdr-btn" title="Browse Indexed University Policies (RAG)">
+                    <i class="bi bi-book-half"></i>
+                </button>
+                <button type="button" id="chatExpandBtn" class="lpu-chat-hdr-btn" title="Expand / Compact Chat">
+                    <i class="bi bi-arrows-angle-expand"></i>
+                </button>
+                <button type="button" id="chatResetBtn" class="lpu-chat-hdr-btn" title="Start New Conversation">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </button>
+                <button type="button" id="chatCloseBtn" class="lpu-chat-hdr-btn" aria-label="Close chat" title="Close">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Collapsible University Policy Quick-Browser Drawer -->
+        <div id="chatPolicyDrawer" class="lpu-chat-policy-drawer d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <small class="fw-bold text-dark"><i class="bi bi-book text-primary me-1"></i>Indexed LPU Policies &amp; Circulars</small>
+                <span id="chatPolicyCount" class="badge bg-secondary" style="font-size: 0.68rem;">Loading...</span>
+            </div>
+            <input type="text" id="chatPolicySearch" class="form-control form-control-sm mb-2" placeholder="Search policies (e.g. attendance, refund, hostel)...">
+            <div id="chatPolicyList"></div>
+        </div>
+
+        <!-- Messages Container -->
+        <div id="chatMessages" class="lpu-chat-body"></div>
+
+        <!-- Single-Row Scrollable Quick Prompt Chips -->
+        <div class="lpu-chat-quick" aria-label="Quick Assistant Prompts">
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the 75% attendance and exam rule?">
+                <i class="bi bi-journal-check text-primary"></i> Exam &amp; Attendance
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the fee refund and scholarship policy?">
+                <i class="bi bi-cash-stack text-success"></i> Fee Refund
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="Check my ticket status">
+                <i class="bi bi-card-checklist text-info"></i> My Tickets
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="What are the hostel maintenance rules and SLA?">
+                <i class="bi bi-tools text-warning"></i> Hostel &amp; Repairs
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the campus Wi-Fi and UMS policy?">
+                <i class="bi bi-wifi text-primary"></i> Wi-Fi &amp; UMS
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the anti-ragging and campus security policy?">
+                <i class="bi bi-shield-check text-danger"></i> Anti-Ragging
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="How does grievance closure work?">
+                <i class="bi bi-patch-check text-success"></i> Closure Rules
             </button>
         </div>
-        <div id="chatMessages" class="lpu-chat-body">
-            <div class="lpu-chat-bubble bot">Hi {{ student.name.split()[0] }}! Ask me about LPU rules &amp; policies (attendance, hostel, Wi-Fi, fees, exams, library, anti-ragging), check your ticket status, or describe a problem for instant routing guidance.</div>
-        </div>
-        <div class="lpu-chat-quick">
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the 75% attendance and exam rule?">Exam &amp; Attendance</button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the fee refund and scholarship policy?">Fee Refund</button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="Check my ticket status">My Ticket Status</button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="How does grievance closure work?">Closure Rules</button>
-        </div>
-        <form id="chatForm" class="lpu-chat-footer d-flex gap-2">
-            <input type="text" id="chatInput" class="form-control form-control-sm" placeholder="Ask a policy question or describe an issue..." maxlength="500" autocomplete="off" required>
-            <button type="submit" id="chatSendBtn" class="btn btn-sm btn-lpu-orange px-3">
-                <i class="bi bi-send-fill"></i>
-            </button>
+
+        <!-- Composer Footer -->
+        <form id="chatForm" class="lpu-chat-footer">
+            <div class="lpu-chat-input-box">
+                <input type="text" id="chatInput" placeholder="Ask a policy question, track tickets, or describe an issue..." maxlength="500" autocomplete="off" required>
+                <button type="button" id="chatMicBtn" class="lpu-chat-mic-btn d-none" title="Voice Input (Speak your question)">
+                    <i class="bi bi-mic-fill"></i>
+                </button>
+                <button type="submit" id="chatSendBtn" class="lpu-chat-send-btn" title="Send Message">
+                    <i class="bi bi-send-fill"></i>
+                </button>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-1 px-1">
+                <small class="text-muted" style="font-size: 0.68rem;">Grounded in official LPU terms &amp; your live tickets</small>
+                <small id="chatCharHint" class="text-muted" style="font-size: 0.68rem;"></small>
+            </div>
         </form>
     </aside>
 
@@ -646,14 +704,319 @@
             }
         });
 
-        // Floating AI Student Assistant Chatbot
+        // Enhanced Floating AI Student Assistant Chatbot (Gemini + RAG)
         const chatFab = document.getElementById('chatFabBtn');
         const chatWidget = document.getElementById('chatWidget');
         const chatClose = document.getElementById('chatCloseBtn');
+        const chatExpand = document.getElementById('chatExpandBtn');
+        const chatReset = document.getElementById('chatResetBtn');
+        const chatPolicyBtn = document.getElementById('chatPolicyBtn');
+        const chatPolicyDrawer = document.getElementById('chatPolicyDrawer');
+        const chatPolicyList = document.getElementById('chatPolicyList');
+        const chatPolicyCount = document.getElementById('chatPolicyCount');
+        const chatPolicySearch = document.getElementById('chatPolicySearch');
         const chatMessages = document.getElementById('chatMessages');
         const chatForm = document.getElementById('chatForm');
         const chatInput = document.getElementById('chatInput');
         const chatSendBtn = document.getElementById('chatSendBtn');
+        const chatMicBtn = document.getElementById('chatMicBtn');
+        const chatCharHint = document.getElementById('chatCharHint');
+        const chatStatusDot = document.getElementById('chatStatusDot');
+        const chatStatusText = document.getElementById('chatStatusText');
+        const studentFirstName = {{ student.name.split()[0]|tojson }};
+        let loadedPolicies = null;
+
+        function getTimeLabel() {
+            const now = new Date();
+            return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // Safe minimal Markdown formatter (bold, inline code, bullet/numbered lists)
+        function formatChatMarkdown(rawText) {
+            const lines = String(rawText || '').split('\n');
+            let html = '';
+            let inList = false;
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                const bulletMatch = line.match(/^(?:[•\-\*]|\d+\.)\s+(.*)$/);
+                if (bulletMatch) {
+                    if (!inList) {
+                        html += '<ul>';
+                        inList = true;
+                    }
+                    let item = escapeHtml(bulletMatch[1])
+                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>');
+                    html += '<li>' + item + '</li>';
+                } else {
+                    if (inList) {
+                        html += '</ul>';
+                        inList = false;
+                    }
+                    if (!line) {
+                        html += '<div style="height: 0.35rem;"></div>';
+                    } else {
+                        let formatted = escapeHtml(line)
+                            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                            .replace(/`([^`]+)`/g, '<code>$1</code>');
+                        html += '<div>' + formatted + '</div>';
+                    }
+                }
+            }
+            if (inList) html += '</ul>';
+            return html;
+        }
+
+        function buildAnalysisCard(analysis) {
+            const card = document.createElement('div');
+            card.className = 'lpu-chat-analysis-card';
+
+            const score = Number(analysis.urgency_score || 25);
+            const barColor = score >= 70 ? '#dc2626' : (score >= 40 ? '#f59e0b' : '#64748b');
+            const priBadge = score >= 70 ? 'bg-danger' : (score >= 40 ? 'bg-warning text-dark' : 'bg-secondary');
+
+            let altHtml = '';
+            if (Array.isArray(analysis.alternatives) && analysis.alternatives.length > 0) {
+                const altStr = analysis.alternatives.map(a => escapeHtml(a.department) + ' (' + escapeHtml(a.confidence) + '%)').join(', ');
+                altHtml = '<div class="text-muted mt-1" style="font-size:0.7rem;">Alternatives: ' + altStr + '</div>';
+            }
+            const slaHtml = analysis.sla_hours
+                ? '<span class="badge bg-info bg-opacity-10 text-info border" style="font-size:0.68rem;">SLA: ' + escapeHtml(analysis.sla_hours) + 'h</span>'
+                : '';
+
+            card.innerHTML =
+                '<div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-1">' +
+                    '<span class="badge bg-primary bg-opacity-10 text-primary border">' +
+                        '<i class="bi bi-building me-1"></i>' + escapeHtml(analysis.department) +
+                        (analysis.confidence ? ' &middot; ' + escapeHtml(analysis.confidence) + '%' : '') +
+                    '</span>' +
+                    '<div class="d-flex gap-1 align-items-center">' +
+                        slaHtml +
+                        '<span class="badge ' + priBadge + '" style="font-size:0.68rem;">' + escapeHtml(analysis.priority) + ' (' + score + '/100)</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="lpu-chat-gauge-bar">' +
+                    '<div class="lpu-chat-gauge-fill" style="width:' + Math.min(100, Math.max(5, score)) + '%; background:' + barColor + ';"></div>' +
+                '</div>' +
+                altHtml;
+            return card;
+        }
+
+        function appendChatMessage(options) {
+            if (!chatMessages) return;
+            const { text, sender, sources, analysis, suggestedGrievance, poweredBy, isWelcome } = options;
+
+            const row = document.createElement('div');
+            row.className = 'lpu-chat-row ' + sender;
+
+            const avatar = document.createElement('div');
+            avatar.className = 'lpu-chat-msg-avatar ' + sender;
+            avatar.innerHTML = sender === 'bot' ? '<i class="bi bi-robot"></i>' : '<i class="bi bi-person-fill"></i>';
+
+            const wrap = document.createElement('div');
+            wrap.className = 'lpu-chat-bubble-wrap';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'lpu-chat-bubble ' + sender;
+            bubble.innerHTML = sender === 'bot' ? formatChatMarkdown(text) : escapeHtml(text);
+
+            // Structured AI Triage Card (Department + Confidence + Urgency 0-100)
+            if (sender === 'bot' && analysis && analysis.department) {
+                bubble.appendChild(buildAnalysisCard(analysis));
+            }
+
+            // RAG Policy Source Citations
+            if (sender === 'bot' && Array.isArray(sources) && sources.length > 0) {
+                const srcWrap = document.createElement('div');
+                srcWrap.className = 'lpu-chat-sources';
+                sources.forEach(s => {
+                    const pill = document.createElement('span');
+                    pill.className = 'lpu-chat-source-pill';
+                    pill.innerHTML = '<i class="bi bi-book-half text-primary"></i> ' + escapeHtml(s.citation || s.title);
+                    srcWrap.appendChild(pill);
+                });
+                bubble.appendChild(srcWrap);
+            }
+
+            // Action Bar (Fill Form, Copy, Thumbs Feedback)
+            if (sender === 'bot' && !isWelcome) {
+                const actions = document.createElement('div');
+                actions.className = 'lpu-chat-actions';
+
+                if (suggestedGrievance) {
+                    const fillBtn = document.createElement('button');
+                    fillBtn.type = 'button';
+                    fillBtn.className = 'btn btn-sm btn-lpu-orange py-1 px-2';
+                    fillBtn.style.fontSize = '0.73rem';
+                    fillBtn.innerHTML = '<i class="bi bi-pencil-square me-1"></i>Fill in Grievance Form';
+                    fillBtn.addEventListener('click', () => {
+                        switchToTab('request');
+                        if (descBox) {
+                            descBox.value = suggestedGrievance.slice(0, 500);
+                            updateCharCount();
+                            descBox.focus();
+                        }
+                        chatWidget?.classList.add('d-none');
+                    });
+                    actions.appendChild(fillBtn);
+                }
+
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'lpu-chat-mini-btn';
+                copyBtn.title = 'Copy reply';
+                copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
+                copyBtn.addEventListener('click', () => {
+                    navigator.clipboard?.writeText(text || '').then(() => {
+                        copyBtn.innerHTML = '<i class="bi bi-check2 text-success"></i> Copied';
+                        setTimeout(() => { copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 1500);
+                    });
+                });
+                actions.appendChild(copyBtn);
+
+                const upBtn = document.createElement('button');
+                upBtn.type = 'button';
+                upBtn.className = 'lpu-chat-mini-btn';
+                upBtn.title = 'Helpful';
+                upBtn.innerHTML = '<i class="bi bi-hand-thumbs-up"></i>';
+                const downBtn = document.createElement('button');
+                downBtn.type = 'button';
+                downBtn.className = 'lpu-chat-mini-btn';
+                downBtn.title = 'Needs improvement';
+                downBtn.innerHTML = '<i class="bi bi-hand-thumbs-down"></i>';
+
+                upBtn.addEventListener('click', () => {
+                    upBtn.classList.add('active');
+                    downBtn.classList.remove('active');
+                    upBtn.innerHTML = '<i class="bi bi-hand-thumbs-up-fill text-success"></i>';
+                    downBtn.innerHTML = '<i class="bi bi-hand-thumbs-down"></i>';
+                });
+                downBtn.addEventListener('click', () => {
+                    downBtn.classList.add('active');
+                    upBtn.classList.remove('active');
+                    downBtn.innerHTML = '<i class="bi bi-hand-thumbs-down-fill text-danger"></i>';
+                    upBtn.innerHTML = '<i class="bi bi-hand-thumbs-up"></i>';
+                });
+                actions.appendChild(upBtn);
+                actions.appendChild(downBtn);
+                bubble.appendChild(actions);
+            }
+
+            const meta = document.createElement('div');
+            meta.className = 'lpu-chat-meta';
+            if (sender === 'bot' && poweredBy) {
+                const isGem = poweredBy.includes('gemini');
+                const tag = document.createElement('span');
+                tag.className = 'lpu-chat-engine-tag' + (isGem ? ' gemini' : '');
+                tag.innerHTML = isGem ? '<i class="bi bi-stars me-1"></i>Gemini AI + RAG' : '<i class="bi bi-cpu me-1"></i>Local RAG';
+                meta.appendChild(tag);
+            }
+            const ts = document.createElement('span');
+            ts.textContent = getTimeLabel();
+            meta.appendChild(ts);
+
+            wrap.appendChild(bubble);
+            wrap.appendChild(meta);
+            row.appendChild(avatar);
+            row.appendChild(wrap);
+            chatMessages.appendChild(row);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function showWelcomeMessage() {
+            if (!chatMessages) return;
+            chatMessages.innerHTML = '';
+            appendChatMessage({
+                sender: 'bot',
+                isWelcome: true,
+                text: 'Hi **' + studentFirstName + '**! I am your **LPU AI Student Assistant**.\n• Ask about university rules & policies (75% attendance, hostel, Wi-Fi, fees/refunds, exams, library, anti-ragging)\n• Check the live status of your submitted tickets\n• Describe any campus issue for instant department routing, urgency score (0-100), and one-click grievance autofill'
+            });
+        }
+        showWelcomeMessage();
+
+        function appendTypingIndicator() {
+            const row = document.createElement('div');
+            row.id = 'chatTypingRow';
+            row.className = 'lpu-chat-row bot';
+            row.innerHTML =
+                '<div class="lpu-chat-msg-avatar bot"><i class="bi bi-robot"></i></div>' +
+                '<div class="lpu-chat-bubble bot lpu-chat-typing">' +
+                    '<span class="lpu-typing-dots"><span></span><span></span><span></span></span>' +
+                    '<span class="text-muted small ms-1">Searching LPU policies &amp; analyzing...</span>' +
+                '</div>';
+            chatMessages?.appendChild(row);
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            document.getElementById('chatTypingRow')?.remove();
+        }
+
+        async function loadPoliciesIntoDrawer() {
+            if (!chatPolicyList) return;
+            if (loadedPolicies !== null) {
+                renderPolicyList(loadedPolicies);
+                return;
+            }
+            try {
+                const res = await fetch('/api/rag/policies');
+                if (res.ok) {
+                    const data = await res.json();
+                    loadedPolicies = data.policies || [];
+                    if (chatPolicyCount) chatPolicyCount.textContent = loadedPolicies.length + ' Indexed';
+                    renderPolicyList(loadedPolicies);
+                }
+            } catch (e) {
+                chatPolicyList.innerHTML = '<div class="small text-danger">Could not load policies.</div>';
+            }
+        }
+
+        function renderPolicyList(items) {
+            if (!chatPolicyList) return;
+            const q = (chatPolicySearch?.value || '').toLowerCase().trim();
+            const filtered = items.filter(p =>
+                !q ||
+                (p.title || '').toLowerCase().includes(q) ||
+                (p.department || '').toLowerCase().includes(q) ||
+                (p.citation || '').toLowerCase().includes(q) ||
+                (p.content || '').toLowerCase().includes(q)
+            );
+            if (!filtered.length) {
+                chatPolicyList.innerHTML = '<div class="small text-muted text-center py-2">No matching policies found.</div>';
+                return;
+            }
+            chatPolicyList.innerHTML = '';
+            filtered.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'lpu-chat-policy-item';
+                div.innerHTML =
+                    '<div class="d-flex justify-content-between align-items-center gap-1">' +
+                        '<strong class="small text-dark">' + escapeHtml(p.title) + '</strong>' +
+                        '<span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:0.65rem;">' + escapeHtml(p.department) + '</span>' +
+                    '</div>' +
+                    '<div class="text-muted" style="font-size:0.7rem;">' + escapeHtml(p.citation) + '</div>';
+                div.addEventListener('click', () => {
+                    chatPolicyDrawer?.classList.add('d-none');
+                    chatPolicyBtn?.classList.remove('active');
+                    sendChatMessage('Explain the policy: ' + p.title + ' (' + p.citation + ')?');
+                });
+                chatPolicyList.appendChild(div);
+            });
+        }
+
+        chatPolicySearch?.addEventListener('input', () => {
+            if (loadedPolicies) renderPolicyList(loadedPolicies);
+        });
 
         chatFab?.addEventListener('click', () => {
             chatWidget?.classList.toggle('d-none');
@@ -666,43 +1029,80 @@
             chatWidget?.classList.add('d-none');
         });
 
-        function appendChatBubble(text, sender, suggestedGrievance) {
-            if (!chatMessages) return;
-            const bubble = document.createElement('div');
-            bubble.className = 'lpu-chat-bubble ' + sender;
-            bubble.textContent = text;
+        chatExpand?.addEventListener('click', () => {
+            const isExp = chatWidget?.classList.toggle('expanded');
+            chatExpand.innerHTML = isExp ? '<i class="bi bi-arrows-angle-contract"></i>' : '<i class="bi bi-arrows-angle-expand"></i>';
+        });
 
-            if (sender === 'bot' && suggestedGrievance) {
-                const actionWrap = document.createElement('div');
-                actionWrap.className = 'mt-2';
-                const fillBtn = document.createElement('button');
-                fillBtn.type = 'button';
-                fillBtn.className = 'btn btn-sm btn-lpu-orange py-1 px-2';
-                fillBtn.style.fontSize = '0.75rem';
-                fillBtn.textContent = 'Fill in Grievance Form';
-                fillBtn.addEventListener('click', () => {
-                    switchToTab('request');
-                    if (descBox) {
-                        descBox.value = suggestedGrievance.slice(0, 500);
-                        updateCharCount();
-                        descBox.focus();
-                    }
-                    chatWidget?.classList.add('d-none');
-                });
-                actionWrap.appendChild(fillBtn);
-                bubble.appendChild(actionWrap);
+        chatPolicyBtn?.addEventListener('click', () => {
+            const hidden = chatPolicyDrawer?.classList.toggle('d-none');
+            chatPolicyBtn.classList.toggle('active', !hidden);
+            if (!hidden) loadPoliciesIntoDrawer();
+        });
+
+        chatReset?.addEventListener('click', async () => {
+            try { await fetch('/api/chat/reset', { method: 'POST' }); } catch (e) {}
+            showWelcomeMessage();
+            chatInput?.focus();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && chatWidget && !chatWidget.classList.contains('d-none')) {
+                chatWidget.classList.add('d-none');
             }
+        });
 
-            chatMessages.appendChild(bubble);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+        chatInput?.addEventListener('input', () => {
+            if (!chatCharHint) return;
+            const len = chatInput.value.length;
+            chatCharHint.textContent = len > 250 ? (500 - len) + ' left' : '';
+        });
+
+        // Optional Web Speech API Voice Input
+        const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognitionAPI && chatMicBtn) {
+            chatMicBtn.classList.remove('d-none');
+            const recognition = new SpeechRecognitionAPI();
+            recognition.lang = 'en-IN';
+            recognition.interimResults = false;
+            let isRecording = false;
+
+            chatMicBtn.addEventListener('click', () => {
+                if (isRecording) {
+                    recognition.stop();
+                } else {
+                    try {
+                        recognition.start();
+                        isRecording = true;
+                        chatMicBtn.classList.add('recording');
+                        if (chatInput) chatInput.placeholder = 'Listening... speak your question';
+                    } catch (e) {}
+                }
+            });
+
+            recognition.onresult = (event) => {
+                const transcript = event.results?.[0]?.[0]?.transcript || '';
+                if (transcript && chatInput) {
+                    chatInput.value = (chatInput.value ? chatInput.value + ' ' : '') + transcript;
+                    chatInput.focus();
+                }
+            };
+
+            recognition.onend = () => {
+                isRecording = false;
+                chatMicBtn.classList.remove('recording');
+                if (chatInput) chatInput.placeholder = 'Ask a policy question, track tickets, or describe an issue...';
+            };
         }
 
         async function sendChatMessage(text) {
             const cleaned = (text || '').trim();
             if (!cleaned) return;
-            appendChatBubble(cleaned, 'user');
+            appendChatMessage({ text: cleaned, sender: 'user' });
             if (chatInput) chatInput.value = '';
+            if (chatCharHint) chatCharHint.textContent = '';
             if (chatSendBtn) chatSendBtn.disabled = true;
+            appendTypingIndicator();
 
             try {
                 const res = await fetch('/api/chat', {
@@ -710,14 +1110,28 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: cleaned })
                 });
+                removeTypingIndicator();
                 if (res.ok) {
                     const data = await res.json();
-                    appendChatBubble(data.reply || 'Sorry, I could not process that request.', 'bot', data.suggested_grievance);
+                    const isGem = (data.powered_by || '').includes('gemini');
+                    if (chatStatusDot && chatStatusText) {
+                        chatStatusDot.classList.toggle('local', !isGem);
+                        chatStatusText.textContent = isGem ? 'Gemini AI + Policy RAG' : 'Local Policy RAG';
+                    }
+                    appendChatMessage({
+                        text: data.reply || 'Sorry, I could not process that request.',
+                        sender: 'bot',
+                        sources: data.sources || [],
+                        analysis: data.analysis || null,
+                        suggestedGrievance: data.suggested_grievance || null,
+                        poweredBy: data.powered_by || 'local-rag'
+                    });
                 } else {
-                    appendChatBubble('Unable to reach the AI assistant right now. Please try again.', 'bot');
+                    appendChatMessage({ text: 'Unable to reach the AI assistant right now. Please try again.', sender: 'bot' });
                 }
             } catch (err) {
-                appendChatBubble('Network error while contacting the AI assistant.', 'bot');
+                removeTypingIndicator();
+                appendChatMessage({ text: 'Network error while contacting the AI assistant.', sender: 'bot' });
             } finally {
                 if (chatSendBtn) chatSendBtn.disabled = false;
                 chatInput?.focus();
