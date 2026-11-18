@@ -97,8 +97,8 @@ def predict_feedback_sentiment(text):
     try:
         prediction = pipeline.predict([cleaned])[0]
         probs = pipeline.predict_proba([cleaned])[0]
-        pos_idx = list(pipeline.classes_).index('Positive')
-        confidence = float(probs[pos_idx])
+        pred_idx = list(pipeline.classes_).index(prediction)
+        confidence = float(probs[pred_idx])
         return prediction, confidence
     except Exception as e:
         print(f"[Sentiment Model] Prediction error: {e}")

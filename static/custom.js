@@ -10,12 +10,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const remaining = maxChars - currentLength;
 
         counterText.textContent = remaining + " character(s) left";
-        if (remaining <= 50) {
-            counterText.classList.remove('text-muted');
-            counterText.classList.add('text-warning', 'fw-semibold');
-        } else if (remaining < 0) {
-            counterText.classList.remove('text-muted', 'text-warning');
+        if (remaining < 0) {
+            counterText.classList.remove('text-muted', 'text-warning', 'fw-semibold');
             counterText.classList.add('text-danger', 'fw-bold');
+        } else if (remaining <= 50) {
+            counterText.classList.remove('text-muted', 'text-danger', 'fw-bold');
+            counterText.classList.add('text-warning', 'fw-semibold');
         } else {
             counterText.classList.remove('text-danger', 'text-warning', 'fw-bold', 'fw-semibold');
             counterText.classList.add('text-muted');

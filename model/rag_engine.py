@@ -1,704 +1,907 @@
 """
-Smart Campus Grievance System - RAG Engine (Retrieval-Augmented Generation)
-Standard University Terms, Policies, Acceptability Verification,
-Semantic Clustering & One-Click Redressal Synthesizer.
+Smart Grievance Routing AI - RAG Engine & AI Student Assistant Chatbot
+Retrieves official university terms, rules, policies, and admin-uploaded documents
+stored in MySQL (`rag_documents` with TF-IDF embeddings) and powers:
+  1. Policy compliance & advisory grounding for submitted grievances
+  2. Conversational AI Student Assistance Chatbot (policy Q&A, live routing preview, ticket lookup)
 """
 
-import os 
+import json
 import re
-import datetime
-from sklearn.feature_extraction.text import TfidfVectorizer
+import uuid
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np 
+
+from database.db import execute_query
+from model.nlp_model import normalize_text, predict_department_with_confidence
+from model.rules import calculate_urgency
+
 
 # ==============================================================================
-# 1. UNIVERSITY STANDARD POLICIES & TERMS KNOWLEDGE BASE
+# 1. OFFICIAL UNIVERSITY TERMS, RULES & POLICIES KNOWLEDGE BASE
 # ==============================================================================
 
-CAMPUS_POLICIES = [
+DEFAULT_UNIVERSITY_POLICIES = [
     {
-        "id": "POL-IT-001",
+        "doc_code": "POL-IT-001",
         "department": "IT",
-        "category": "Network & Wi-Fi Access",
-        "title": "Campus Wi-Fi & Network Infrastructure Policy",
+        "title": "Campus Wi-Fi, LAN & Network Infrastructure Policy",
         "citation": "LPU IT Code 2026, Sec 4.1 (Campus Digital Connectivity)",
         "sla_hours": 12,
+        "content": (
+            "Campus Wi-Fi, hostel internet, LAN ports, routers, and computer labs are maintained by the IT Department "
+            "with a target resolution SLA of 12 hours. Valid grievances include weak hostel Wi-Fi signal, disconnected "
+            "access points, slow internet speed, IP/DNS failures, captive portal login timeouts, and lab PC or projector "
+            "malfunctions. Students should disable MAC address randomization when troubleshooting hostel Wi-Fi. "
+            "Prohibited actions under Sec 4.1.3: bypassing campus firewall or proxy, unblocking torrents or gambling, "
+            "setting up unauthorized private routers, packet sniffing, or requesting admin Wi-Fi credentials."
+        ),
         "acceptable_scope": [
-            "hostel room wifi weak signal", "lab internet disconnected", "wifi access point down",
-            "cannot connect to campus network", "slow speed during class hours", "ip address conflict",
-            "dns lookup failure", "captive portal login timeout", "router flashing red"
+            "hostel wifi weak signal", "lab internet disconnected", "wifi access point down",
+            "cannot connect campus network", "slow internet speed", "captive portal timeout",
+            "router flashing red", "lab computer slow", "projector blue screen"
         ],
         "unacceptable_scope": [
-            "request to bypass campus firewall", "request to unblock torrents or gambling",
-            "requesting admin wifi passwords", "setting up unauthorized private routers",
-            "sniffing campus network packets", "requesting proxy bypass for attendance"
+            "bypass campus firewall", "unblock torrents gambling", "admin wifi passwords",
+            "unauthorized private routers", "sniffing network packets", "proxy bypass attendance"
         ],
         "default_advisory": (
-            "Valid IT Grievance. Under Sec 4.1, campus network team guarantees 99.5% uptime. "
-            "Please verify that MAC address randomization is disabled in your Wi-Fi device settings. "
-            "An IT field technician will inspect the nearest block access point within 12 hours."
+            "Valid IT Grievance under LPU IT Code Sec 4.1 (SLA: 12h). Please disable MAC address randomization "
+            "on your device while the IT network technician inspects the nearest access point."
         ),
         "violation_reason": (
-            "Grievance rejected under Sec 4.1.3: Circumventing institutional firewall rules, unauthorized "
-            "proxy requests, or tampering with university network security credentials is strictly prohibited "
-            "under IT Act 2000 and University Disciplinary Rules."
-        )
+            "Rejected under LPU IT Code Sec 4.1.3: Bypassing institutional firewall rules, proxy circumvention, "
+            "unauthorized torrenting, or tampering with university network credentials is strictly prohibited."
+        ),
     },
     {
-        "id": "POL-IT-002",
+        "doc_code": "POL-IT-002",
         "department": "IT",
-        "category": "Academic Portals & UMS / LMS",
-        "title": "University Management System (UMS) & LMS Access Terms",
+        "title": "UMS, LMS & Student Email Academic Portal Terms",
         "citation": "LPU Academic Computing Norms, Clause 5.2",
         "sla_hours": 24,
+        "content": (
+            "The University Management System (UMS), Learning Management System (LMS), and official student email "
+            "portals are governed under Clause 5.2 (target SLA: 24 hours). Valid issues include 500 internal server "
+            "errors, fee receipt download failures, LMS assignment submission glitches, grade sheet display errors, "
+            "email password resets, and biometric attendance sync mismatches. If an LMS outage impacts an assignment "
+            "deadline, note your Grievance Ticket ID and inform your course instructor for technical amnesty. "
+            "Prohibited actions: requesting another student's login credentials, manual attendance alteration without "
+            "mentor approval, uploading forged documents, or unauthorized database access."
+        ),
         "acceptable_scope": [
-            "ums fee receipt download error", "lms assignment submission portal crashed",
-            "portal shows 500 internal server error", "cannot view grade sheet on ums",
-            "student email password reset", "biometric attendance sync mismatch",
-            "course registration portal timed out"
+            "ums fee receipt download error", "lms assignment portal crashed", "portal internal server error",
+            "cannot view grade sheet ums", "student email password reset", "biometric attendance sync mismatch"
         ],
         "unacceptable_scope": [
-            "requesting another student's login credentials", "requesting to change attendance manually without mentor approval",
-            "submitting fake medical certificates via tech ticket", "hacking portal database"
+            "another student login credentials", "change attendance manually without mentor",
+            "fake medical certificates tech ticket", "hacking portal database"
         ],
         "default_advisory": (
-            "Valid Grievance. UMS Technical Support ticket logged. If submitting an urgent assignment, "
-            "please note ticket ID in an email to your course instructor to claim technical amnesty."
+            "Valid Portal Grievance under Clause 5.2 (SLA: 24h). UMS/LMS support has been notified; keep your "
+            "ticket ID handy if an assignment or deadline is affected."
         ),
         "violation_reason": (
-            "Grievance rejected under Clause 5.2: Student credentials cannot be altered or accessed on behalf "
-            "of another individual, and attendance ledger modifications require verified physical mentor sanction."
-        )
+            "Rejected under Clause 5.2: Sharing or altering another student's credentials or modifying attendance "
+            "records without verified mentor sanction violates Academic Computing Norms."
+        ),
     },
     {
-        "id": "POL-MAINT-001",
+        "doc_code": "POL-MAINT-001",
         "department": "Maintenance",
-        "category": "Civil & Plumbing Infrastructure",
-        "title": "Hostel & Classroom Facilities Maintenance Regulations",
-        "citation": "LPU Estate Maintenance Bylaws, Art. 8 (Civil & Sanitation)",
+        "title": "Hostel & Campus Civil, Plumbing & Facilities Maintenance Policy",
+        "citation": "LPU Estate & Hostel Maintenance Bylaws, Art. 8",
         "sla_hours": 24,
+        "content": (
+            "Hostel rooms, washrooms, water coolers, corridors, classrooms, and campus furniture are maintained by "
+            "Estate Maintenance under Art. 8 (target SLA: 24 hours). Valid grievances include leaking pipes, broken "
+            "taps, clogged washrooms or non-working flushes, water supply outages, dirty water cooler filters, ceiling "
+            "seepage, cracked window glass, broken door locks, broken benches/beds, and pest control requests. "
+            "Prohibited requests under Art. 8.4: personalized luxury room remodeling, private bathtubs/jacuzzis, "
+            "custom tile replacements, or claims arising from intentional vandalism of university property."
+        ),
         "acceptable_scope": [
-            "water leaking from washroom pipe", "tap broken sink flooding", "toilet flush not working",
-            "no running water in hostel floor", "drinking water water cooler filter dirty",
-            "drainage choke foul smell", "ceiling water seepage rain leakage",
-            "toilet blocked", "blocked toilet", "clean toilet", "warden clean toilet", "choked toilet"
+            "water leaking washroom pipe", "broken tap sink flooding", "toilet flush not working",
+            "no running water hostel", "water cooler filter dirty", "ceiling seepage plaster",
+            "broken door lock window glass", "broken bench chair bed"
         ],
         "unacceptable_scope": [
-            "requesting personal bathroom remodeling", "demanding luxury bathtub or jacuzzi in hostel",
-            "demanding custom tile replacement", "intentional vandalism of university plumbing"
+            "personal bathroom remodeling", "luxury bathtub jacuzzi hostel",
+            "custom tile replacement", "intentional vandalism plumbing"
         ],
         "default_advisory": (
-            "Valid Maintenance Grievance under Art. 8 (Civil & Sanitation). Facilities maintenance desk notified. "
-            "Duty technician dispatched for inspection. Expected resolution within 24 hours."
+            "Valid Maintenance Grievance under Estate Bylaws Art. 8 (SLA: 24h). The facilities team will inspect "
+            "and repair the reported fixture promptly."
         ),
         "violation_reason": (
-            "Grievance rejected under Art. 8.4: Standard residential hostel accommodation follows uniform "
-            "sanitation inventory; personalized luxury civil modifications are not permitted."
-        )
+            "Rejected under Estate Bylaws Art. 8.4: Personalized luxury civil modifications fall outside uniform "
+            "hostel accommodation standards."
+        ),
     },
     {
-        "id": "POL-MAINT-002",
+        "doc_code": "POL-MAINT-002",
         "department": "Maintenance",
-        "category": "Electrical & HVAC Safety",
-        "title": "Campus Electrical & HVAC Safety Standards",
-        "citation": "LPU Electrical Safety Regulations & Fire Code 2026",
+        "title": "Campus Electrical, HVAC & Fire Safety Code",
+        "citation": "LPU Electrical Safety & Fire Code 2026, Sec 12",
         "sla_hours": 6,
+        "content": (
+            "Electrical safety hazards and HVAC failures are handled under Fire Code Sec 12 with an emergency SLA "
+            "of 6 hours for hazards. Valid reports include sparking switchboards, burning wire smells, short circuits, "
+            "electric shocks from geysers/appliances, stuck elevators/lifts, flickering lights, wobbling ceiling fans, "
+            "power cuts, and AC leakage or cooling failure. Maintain safe distance from any sparking fixture. "
+            "Prohibited actions under Sec 12: unauthorized high-wattage heating coils (2000W+), tampering with main "
+            "breakers, cryptocurrency mining rigs on hostel power, or illegal wire tapping."
+        ),
         "acceptable_scope": [
-            "electrical sparks from switchboard", "ac cooling not working cooling fan broken",
-            "short circuit smell burning wire", "tube light sparking in classroom",
-            "power cut in hostel room fuse tripped", "elevator lift stuck emergency",
-            "geyser hot water shock"
+            "electrical sparks switchboard", "short circuit burning wire", "ac cooling not working",
+            "fan wobbling light flickering", "power cut fuse tripped", "elevator lift stuck",
+            "geyser electric shock"
         ],
         "unacceptable_scope": [
-            "requesting permission for unauthorized 2000W heating coils", "tampering with main substation breaker",
-            "running cryptocurrency mining rig on room power", "illegal electrical wire tapping"
+            "unauthorized heating coils", "tampering substation breaker",
+            "cryptocurrency mining rig power", "illegal wire tapping"
         ],
         "default_advisory": (
-            "PRIORITY SAFETY GRIEVANCE under Fire Code 2026. Electrical substation alert initiated. "
-            "Please maintain a safe 5-meter distance from the sparking fixture. Duty electrician dispatched."
+            "Safety & Electrical Grievance logged under Fire Code Sec 12 (Priority SLA: 6h). Please stay clear "
+            "of any sparking or wet electrical fixture while the duty electrician responds."
         ),
         "violation_reason": (
-            "Grievance rejected under Fire Code Sec 12: High-wattage heating coils, heavy unapproved "
-            "appliances, or unauthorized wire tapping represent severe fire hazards subject to disciplinary fines."
-        )
+            "Rejected under Fire Code Sec 12: High-wattage unapproved appliances, crypto rigs, or unauthorized "
+            "electrical tapping pose severe fire hazards and are strictly prohibited."
+        ),
     },
     {
-        "id": "POL-CAFE-001",
+        "doc_code": "POL-CAFE-001",
         "department": "Cafeteria",
-        "category": "Food Safety & Mess Hygiene",
-        "title": "University Food Safety, Hygiene & Canteen Redressal Standards",
-        "citation": "FSSAI Compliance & LPU Food Charter, Section 3.4",
+        "title": "Cafeteria, Mess Hygiene & Food Safety Charter",
+        "citation": "FSSAI Compliance & LPU Food Charter, Sec 3.4",
         "sla_hours": 12,
+        "content": (
+            "All campus mess halls, canteens, and food stalls operate under FSSAI norms and LPU Food Charter Sec 3.4 "
+            "(target SLA: 12 hours). Valid grievances include stale or uncooked food, foreign objects/insects/hair in "
+            "meals, food poisoning symptoms, unhygienic utensils or water dispensers, staff not wearing gloves/hairnets, "
+            "unannounced price hikes, and double QR/UPI billing (auto-reconciled within 24-48 bank hours). "
+            "Prohibited requests: demanding free meal coupons without financial aid sanction, refusing to pay valid "
+            "bills, or disorderly conduct toward cafeteria staff."
+        ),
         "acceptable_scope": [
-            "uncooked food served in mess", "foreign object insect hair found in lunch",
-            "stale food bad smell cafeteria", "mess water dispenser dirty",
-            "canteen vendor double charged qr payment failed", "mess staff not wearing gloves hairnet",
-            "food poisoning symptoms reported by students"
+            "uncooked stale food mess", "hair insect cockroach food", "canteen double charged qr payment",
+            "food poisoning symptoms", "mess hygiene water dispenser", "canteen rates price hike"
         ],
         "unacceptable_scope": [
-            "demanding free meal coupons without financial aid", "demanding outside uncontracted fast food chains",
-            "refusing to pay canteen bill", "harassing cafeteria staff or throwing utensils"
+            "free meal coupons without financial aid", "refusing pay canteen bill",
+            "harassing cafeteria staff throwing utensils"
         ],
         "default_advisory": (
-            "Valid Food Hygiene Grievance under FSSAI Section 3.4. Food safety supervisor alerted. "
-            "Sample from the current meal lot has been quarantined for microbiological evaluation. "
-            "If transaction was debited twice, auto-reversal is triggered within 24-48 bank hours."
+            "Valid Food Safety Grievance under FSSAI & Food Charter Sec 3.4 (SLA: 12h). Food supervisor alerted; "
+            "duplicate QR/UPI debits are reconciled within 24-48 banking hours."
         ),
         "violation_reason": (
-            "Grievance rejected under Food Charter Clause 6: Student mess operations are governed by "
-            "democratic student mess committee menus; disorderly conduct or unsubstantiated demands for "
-            "unapproved vendors fall outside redressal scope."
-        )
+            "Rejected under Food Charter Clause 6: Unsubstantiated free-meal demands or disorderly conduct fall "
+            "outside formal grievance redressal scope."
+        ),
     },
     {
-        "id": "POL-FIN-001",
+        "doc_code": "POL-FIN-001",
         "department": "Finance",
-        "category": "Fee Assessment & Refunds",
-        "title": "Student Financial Services, Scholarships & Refund Regulations",
+        "title": "Tuition Fees, Scholarships, Refunds & Accounts Ordinance",
         "citation": "LPU Financial Ordinances, Chapter IX (Fees & Refunds)",
         "sla_hours": 48,
+        "content": (
+            "Student fee assessment, receipts, scholarships, educational loans, and caution money refunds are governed "
+            "by LPU Financial Ordinances Chapter IX (target SLA: 48 hours). Valid grievances include double bank "
+            "deductions (share your bank UTR number in case replies), scholarship credits missing from ledger, delayed "
+            "caution deposit refunds after no-dues clearance, incorrect late fines, and missing fee receipts. "
+            "Prohibited requests under Ch. IX Art. 4: blanket tuition fee waivers without formal scholarship board "
+            "approval, refunds after semester commencement non-refundable cutoff, or unaudited cash disbursements."
+        ),
         "acceptable_scope": [
-            "fee payment deducted twice from bank account", "scholarship amount not credited to fee balance",
-            "security caution money refund pending after no-dues clearance",
-            "ums fee challan shows incorrect late fine", "educational loan disbursement verification delayed",
-            "receipt not generated after successful net banking"
+            "fee payment deducted twice bank", "scholarship not credited balance",
+            "caution money security deposit refund", "incorrect late fine challan",
+            "education loan disbursement verification", "receipt not generated net banking"
         ],
         "unacceptable_scope": [
-            "demanding complete waiver of tuition fee without academic merit or scholarship",
-            "demanding refund after non-refundable semester commencement cutoff",
-            "requesting cash disbursement without audited bank account", "evading university mandatory fees"
+            "complete waiver tuition fee without scholarship", "refund after non refundable cutoff",
+            "cash disbursement without bank account", "evading mandatory university fees"
         ],
         "default_advisory": (
-            "Valid Financial Grievance under Chapter IX. Accounts reconciliation desk notified. "
-            "Double-deductions are resolved within 48-72 business hours upon automated bank gateway reconciliation. "
-            "Please ensure your bank UTR number is shared in case discussion."
+            "Valid Financial Grievance under Financial Ordinances Ch. IX (SLA: 48h). Accounts reconciliation desk "
+            "notified; please share your bank UTR/transaction ID in the case reply thread if payment-related."
         ),
         "violation_reason": (
-            "Grievance rejected under Chapter IX, Art. 4: University tuition and institutional fee schedules "
-            "are approved by Board of Governors. Blanket fee waivers cannot be granted through grievance redressing "
-            "without formal scholarship board petition."
-        )
+            "Rejected under Financial Ordinances Ch. IX Art. 4: Blanket fee waivers or post-cutoff refunds cannot "
+            "be granted outside Board of Governors scholarship and refund rules."
+        ),
     },
     {
-        "id": "POL-SEC-001",
+        "doc_code": "POL-SEC-001",
         "department": "Security",
-        "category": "Campus Safety, Anti-Ragging & Property",
-        "title": "Campus Safety, Anti-Ragging & Security Code",
-        "citation": "UGC Anti-Ragging Directives & LPU Security Manual 2026",
+        "title": "Campus Security, Anti-Ragging & Property Protection Code",
+        "citation": "UGC Anti-Ragging Directives & LPU Security Manual, Sec 2",
         "sla_hours": 4,
+        "content": (
+            "Lovely Professional University enforces zero tolerance for ragging, harassment, theft, and unauthorized "
+            "campus/hostel entry under UGC Anti-Ragging Directives and Security Manual Sec 2 (emergency SLA: 4 hours). "
+            "Valid grievances include ragging, bullying, stolen laptops/phones/bicycles, unauthorized entry into hostel "
+            "rooms, broken CCTV cameras, dark campus streetlights, gate pass issues, lost ID cards, and SOS threats. "
+            "Prohibited actions under Sec 2: protesting mandatory ID card verification at campus gates, obstructing "
+            "security checks, filing prank SOS alarms, or bringing prohibited contraband onto campus."
+        ),
         "acceptable_scope": [
-            "ragging incident in hostel block", "verbal physical bullying harassment",
-            "stolen laptop bicycle phone from library", "unauthorized stranger trespasser in corridor",
-            "broken cctv camera near girls hostel", "streetlights dark on campus walkway at night",
-            "lost id card access card blocked", "sos emergency threat",
-            "someone opened my room without permission", "unauthorized entry into room", "unlocked my room", "room privacy", "someone opened room"
+            "ragging incident hostel", "stolen laptop phone bicycle", "unauthorized entry opened room",
+            "broken cctv camera", "dark streetlights walkway", "lost id card blocked", "sos emergency threat"
         ],
         "unacceptable_scope": [
-            "complaint protesting standard security guard id verification at campus gates",
-            "demanding security allow illegal substance smuggling", "frivolous prank emergency alarms",
-            "refusal to submit vehicle parking sticker"
+            "protesting security guard id verification", "allow illegal substance smuggling",
+            "frivolous prank emergency alarms", "refusal vehicle parking sticker"
         ],
         "default_advisory": (
-            "Valid Campus Security Grievance under Security Manual Sec 2. Duty proctor and campus security patrol notified to investigate unauthorized room access and review corridor CCTV surveillance."
+            "Priority Security Grievance under UGC Directives & Security Manual Sec 2 (SLA: 4h). Campus security "
+            "and duty proctor have been alerted to investigate and review CCTV records."
         ),
         "violation_reason": (
-            "Grievance rejected under Security Manual Sec 2: Institutional identity card verification, vehicle frisking, "
-            "and campus boundary surveillance are statutory safety measures; obstruction or protests against "
-            "legitimate security checks constitute disciplinary violations."
-        )
+            "Rejected under Security Manual Sec 2: Mandatory ID verification, gate frisking, and anti-contraband "
+            "rules are statutory campus safety controls."
+        ),
     },
     {
-        "id": "POL-LIB-001",
+        "doc_code": "POL-LIB-001",
         "department": "Library",
-        "category": "Learning Resources & Silent Study",
-        "title": "Central Library Circulation & Digital Repository Guidelines",
+        "title": "Central Library Circulation, Fines & Study Zone Guidelines",
         "citation": "LPU Central Library Manual, Part IV",
         "sla_hours": 24,
+        "content": (
+            "Central Library book lending, RFID returns, digital databases (IEEE/ACM/Springer), and silent reading "
+            "halls follow Library Manual Part IV (target SLA: 24 hours). Valid grievances include returned books still "
+            "showing overdue fines, expired digital library credentials, noise disturbances in quiet study zones, "
+            "broken reading hall AC/PCs, catalog/RFID gate errors, and book availability requests. "
+            "Prohibited requests under Sec 4.5: waiving replacement charges for lost/damaged books, taking rare "
+            "reference-only volumes off-campus, or tearing/stealing library materials."
+        ),
         "acceptable_scope": [
-            "returned book showing pending fine on library card", "ieee acm digital library access expired",
-            "noise loud talking in 4th floor quiet study zone", "air conditioning broken in library reading hall",
-            "book lost replacement calculation error", "rfid turnstile gate reading error"
+            "returned book overdue fine", "digital library ieee access expired",
+            "noise talking quiet study zone", "library reading hall broken", "rfid gate error",
+            "library books catalog availability"
         ],
         "unacceptable_scope": [
-            "requesting exemption from lost book replacement cost", "demanding to borrow reference-only rare books off-campus",
-            "stealing library books or tearing journal pages", "sleeping continuously in study carrels overnight"
+            "exemption lost book replacement cost", "borrow reference rare books off campus",
+            "stealing library books tearing pages"
         ],
         "default_advisory": (
-            "Valid Library Grievance under Part IV. Assistant Librarian notified. The circulation desk RFID "
-            "return audit log will be verified within 24 hours to waive erroneously marked overdue fines."
+            "Valid Library Grievance under Library Manual Part IV (SLA: 24h). The circulation desk will audit "
+            "RFID return logs and update your library account."
         ),
         "violation_reason": (
-            "Grievance rejected under Library Manual Sec 4.5: Standard replacement charges for damaged or lost "
-            "university volumes are non-negotiable institutional property safeguards."
-        )
+            "Rejected under Library Manual Sec 4.5: Replacement charges for lost/damaged university books and "
+            "reference-only circulation rules are non-negotiable."
+        ),
     },
     {
-        "id": "POL-EXAM-001",
+        "doc_code": "POL-EXAM-001",
         "department": "Examination",
-        "category": "Controller of Examinations & Evaluations",
-        "title": "University Examination Code & Evaluation Conduct",
-        "citation": "LPU Examination Ordinances, Clause 14 (Redressal & Grievance)",
+        "title": "Examination Ordinances, 75% Attendance Rule & Evaluation Redressal",
+        "citation": "LPU Examination Ordinances, Clause 14",
         "sla_hours": 36,
+        "content": (
+            "Examinations, admit cards, internal marks, re-evaluation, and eligibility rules are governed by LPU "
+            "Examination Ordinances Clause 14 (target SLA: 36 hours). Minimum 75% attendance is mandatory to appear "
+            "in end-term examinations (medical condonation requires formal verified approval). Valid grievances include "
+            "missing internal marks on UMS, corrupted admit card/hall ticket, two exams clashing in the same slot, "
+            "delayed re-evaluation results, wrong subject codes on date sheet, and scribe accommodation for injured "
+            "students. Prohibited requests under Sec 14.8: requesting advance/leaked question papers, bypassing the "
+            "75% attendance detention rule without medical sanction, canceling UFM action without committee hearing, "
+            "or demanding unearned passing marks."
+        ),
         "acceptable_scope": [
-            "internal assessment marks missing from ums grade card", "hall ticket admit card download photo corrupted",
-            "two end-term exams scheduled on same date and time slot", "re-evaluation result not declared after 3 weeks",
-            "scribes accommodation needed for injured student", "wrong subject code listed in exam date sheet"
+            "internal marks missing ums grade card", "hall ticket admit card download error",
+            "two exams same date slot clash", "re evaluation result delayed",
+            "scribe accommodation injured student", "wrong subject code date sheet"
         ],
         "unacceptable_scope": [
-            "demanding advance examination question papers", "protesting detention for attendance below 75% without medical sanction",
-            "requesting cancellation of unfair means (UFM) disciplinary action without committee review",
-            "demanding passing grades without taking exam"
+            "advance examination question papers", "detention attendance below 75 without medical",
+            "cancellation unfair means ufm without committee", "passing grades without taking exam"
         ],
         "default_advisory": (
-            "Valid Examination Grievance under Clause 14. Controller of Examinations (COE) desk notified. "
-            "Internal mark verification request forwarded to Department Subject Coordinator for roster audit."
+            "Valid Examination Grievance under Examination Ordinances Clause 14 (SLA: 36h). Forwarded to the "
+            "Controller of Examinations desk for roster verification."
         ),
         "violation_reason": (
-            "Grievance rejected under Exam Ordinance Sec 14.8: Demands for unearned marks, advance paper disclosures, "
-            "or circumventing mandatory attendance eligibility thresholds (75%) strictly contravene statutory university norms."
-        )
+            "Rejected under Examination Ordinances Sec 14.8: Demands for leaked exam papers, unearned marks, or "
+            "bypassing mandatory 75% attendance eligibility strictly contravene university statutes."
+        ),
     },
     {
-        "id": "POL-DISC-001",
+        "doc_code": "POL-DISC-001",
         "department": "Discipline",
-        "category": "Student Code of Conduct, Staff Affairs & Proctorial Grievances",
-        "title": "University Proctorial Guidelines, Staff Conduct & Dispute Redressal",
+        "title": "Student Code of Conduct, Staff Behavior & Proctorial Guidelines",
         "citation": "LPU Student Handbook 2026, Code of Conduct Sec 2",
         "sla_hours": 24,
+        "content": (
+            "Campus harmony, hostel decorum, roommate conflicts, and staff/student conduct fall under Code of Conduct "
+            "Sec 2 (target SLA: 24 hours). Valid grievances include roommate disputes, loud music during quiet/exam "
+            "hours, rude or unprofessional staff behavior, cyberbullying in campus groups, and club/committee disputes. "
+            "Prohibited actions under Sec 2.9: demanding the university ignore physical assault, alcohol/drugs/smoking "
+            "violations, canceling active suspensions without proctorial inquiry, or filing knowingly false complaints."
+        ),
         "acceptable_scope": [
-            "roommate dispute sleep disruption", "unauthorized entry into room",
-            "loud music played during exam study week", "defamation or cyber bullying in university group",
-            "unresolved conflict in student club committee",
-            "hospital staff is so much annoying", "hospital staff annoying", "hospital staff rude", "dispensary staff misbehavior",
-            "medical clinic staff unprofessional", "campus staff rude arrogant annoying", "warden misconduct", "staff behavior complaint",
-            "hospital staff", "dispensary staff", "clinic staff", "medical staff"
+            "roommate dispute sleep disruption", "loud music exam study week",
+            "cyber bullying defamation university group", "rude staff misbehavior unprofessional",
+            "student club committee conflict"
         ],
         "unacceptable_scope": [
-            "demanding university ignore physical assault or drug possession", "requesting removal of suspension without inquiry",
-            "filing malicious knowingly false counter-complaints to intimidate witnesses"
+            "ignore physical assault drug possession", "removal suspension without inquiry",
+            "malicious knowingly false counter complaints"
         ],
         "default_advisory": (
-            "Valid Grievance under Code of Conduct & Proctorial Regulations. Proctorial board and department superintendent "
-            "notified to review staff conduct and address service grievances. Inquiry and student assistance initiated within 24-48 hours."
+            "Valid Conduct Grievance under Student Handbook Sec 2 (SLA: 24h). Proctorial officer notified to "
+            "review the incident confidentially and initiate mediation/action."
         ),
         "violation_reason": (
-            "Grievance rejected under Code of Conduct Sec 2.9: Malicious or retaliatory filings intended "
-            "to obstruct formal investigations are subject to immediate proctorial disciplinary review."
-        )
-    }
+            "Rejected under Code of Conduct Sec 2.9: Requests to bypass disciplinary inquiries or conceal "
+            "substance/assault violations cannot be accepted."
+        ),
+    },
+    {
+        "doc_code": "POL-GRIEV-001",
+        "department": "General",
+        "title": "Student Grievance Filing, Escalation & Sentiment-Verified Closure Procedure",
+        "citation": "LPU Student Grievance Redressal Charter, Sec 1",
+        "sla_hours": 24,
+        "content": (
+            "How the Student Grievance System works: (1) Students log in using their University Registration Number "
+            "and submit their complaint under 'Log Request'. (2) Our AI NLP classifier automatically predicts the "
+            "right department with confidence %, assigns a numerical Urgency Score (0-100) into High (>=70), Medium "
+            "(40-69), or Low (<40) priority, checks university policies via RAG, and routes instantly to the officer "
+            "with the lowest active workload. (3) Students can track live progress, reply in the case thread, or "
+            "escalate urgent unresolved tickets. (4) Once the officer completes the work, the status becomes "
+            "'Completed - Awaiting Feedback'. (5) Final case closure is strictly enforced by Central Administration "
+            "ONLY after the student submits Positive satisfaction feedback verified by our AI Sentiment Classifier; "
+            "Negative feedback blocks closure and triggers re-routing."
+        ),
+        "acceptable_scope": [
+            "how to submit grievance", "track complaint status", "how closure works",
+            "escalation process", "feedback sentiment verification"
+        ],
+        "unacceptable_scope": [],
+        "default_advisory": (
+            "Your grievance is tracked end-to-end under LPU Grievance Charter Sec 1. Final closure occurs only "
+            "after you verify resolution with positive satisfaction feedback."
+        ),
+        "violation_reason": "",
+    },
 ]
 
+_POLICY_BY_CODE = {p["doc_code"]: p for p in DEFAULT_UNIVERSITY_POLICIES}
+
+PROHIBITED_PATTERNS = [
+    (r'\b(bypass|hack|crack|tamper)\s+(firewall|proxy|attendance|password|server)\b',
+     "Attempt to bypass campus security, firewall, or attendance rules"),
+    (r'\b(torrent|torrents|gambling|crypto\s*mining|dark\s*web)\b',
+     "Unauthorized use of campus network/power for prohibited services"),
+    (r'\b(leak|leakage|advance)\s+(?:the\s+)?(?:end[\s-]?term\s+)?(?:exam(?:ination)?\s+)?(paper|question|solution)\b',
+     "Solicitation of confidential examination material"),
+    (r'\b(cancel|waive)\s+(attendance|suspension|ufm|punishment)\s+(without|mandatory)\b',
+     "Request to bypass statutory disciplinary or attendance procedures"),
+    (r'\b(free\s+degree|give\s+me\s+passing\s+marks|increase\s+marks\s+without)\b',
+     "Request for unearned academic grading manipulation"),
+    (r'\b(jacuzzi|luxury\s+bathtub|personal\s+maid|private\s+chef)\b',
+     "Out-of-scope personal luxury modification request"),
+    (r'\b(fake|fraudulent|forged)\s+(certificate|receipt|medical)\b',
+     "Mention or submission of forged/fraudulent documentation"),
+]
+
+_EXTRA_STOPWORDS = {
+    'please', 'want', 'need', 'request', 'requesting', 'demanding', 'demand',
+    'campus', 'university', 'student', 'college', 'lpu', 'hostel', 'problem', 'issue'
+}
+
+
+def _meaningful_tokens(text):
+    tokens = re.findall(r'[a-z0-9]+', normalize_text(text))
+    return {t for t in tokens if t not in ENGLISH_STOP_WORDS and t not in _EXTRA_STOPWORDS and len(t) > 1}
+
+
 # ==============================================================================
-# 2. RAG VECTOR KNOWLEDGE BASE INITIALIZER
+# 2. RAG VECTOR INDEX (BACKED BY MYSQL `rag_documents` + EMBEDDINGS)
 # ==============================================================================
 
-class PolicyRAGKnowledgeBase:
+class UniversityRAGIndex:
     def __init__(self):
-        self.policies = CAMPUS_POLICIES
+        self.documents = []
         self.vectorizer = None
-        self.policy_matrix = None
-        self.doc_texts = []
-        self._build_index()
+        self.doc_matrix = None
+        self._seeded = False
 
-    def _build_index(self):
-        self.doc_texts = []
-        for p in self.policies:
-            combined = (
-                f"{p['title']} {p['category']} {p['department']} "
-                f"{' '.join(p['acceptable_scope'])} "
-                f"{' '.join(p['unacceptable_scope'])} "
-                f"{p['citation']} {p['default_advisory']}"
-            )
-            self.doc_texts.append(combined)
+    def ensure_seeded(self):
+        if self._seeded:
+            return
+        try:
+            existing = execute_query("SELECT doc_code FROM rag_documents", fetchall=True) or []
+            existing_codes = {r["doc_code"] for r in existing}
+            for p in DEFAULT_UNIVERSITY_POLICIES:
+                if p["doc_code"] not in existing_codes:
+                    execute_query(
+                        """INSERT INTO rag_documents (doc_code, title, department, citation, content, source_type)
+                           VALUES (%s, %s, %s, %s, %s, %s)""",
+                        (p["doc_code"], p["title"], p["department"], p["citation"], p["content"], "policy"),
+                        commit=True
+                    )
+            self._seeded = True
+        except Exception as e:
+            print(f"[RAG Warning] Could not seed rag_documents in MySQL: {e}")
+
+    def rebuild_index(self, persist_embeddings=False):
+        self.ensure_seeded()
+        try:
+            rows = execute_query(
+                "SELECT id, doc_code, title, department, citation, content, source_type, created_at FROM rag_documents ORDER BY id ASC",
+                fetchall=True
+            ) or []
+        except Exception as e:
+            print(f"[RAG Warning] Falling back to in-memory default policies ({e})")
+            rows = [
+                {
+                    "id": i + 1,
+                    "doc_code": p["doc_code"],
+                    "title": p["title"],
+                    "department": p["department"],
+                    "citation": p["citation"],
+                    "content": p["content"],
+                    "source_type": "policy",
+                }
+                for i, p in enumerate(DEFAULT_UNIVERSITY_POLICIES)
+            ]
+
+        self.documents = rows
+        corpus = [
+            f"{d['title']} {d['department']} {d['citation']} {normalize_text(d['content'])}"
+            for d in self.documents
+        ]
+        if not corpus:
+            self.vectorizer = None
+            self.doc_matrix = None
+            return
 
         self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words='english', sublinear_tf=True)
-        self.policy_matrix = self.vectorizer.fit_transform(self.doc_texts)
+        self.doc_matrix = self.vectorizer.fit_transform(corpus)
 
-    def retrieve_relevant_policy(self, query_text, department=None):
-        if not query_text or not self.vectorizer:
-            return self.policies[0], 0.0
+        if persist_embeddings:
+            feature_names = self.vectorizer.get_feature_names_out()
+            for idx, doc in enumerate(self.documents):
+                row_vec = self.doc_matrix[idx]
+                top_pairs = sorted(
+                    zip(row_vec.indices, row_vec.data),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:40]
+                emb = {str(feature_names[i]): round(float(val), 4) for i, val in top_pairs}
+                try:
+                    execute_query(
+                        "UPDATE rag_documents SET embedding_json = %s WHERE id = %s",
+                        (json.dumps(emb), doc["id"]),
+                        commit=True
+                    )
+                except Exception:
+                    pass
 
-        q_vec = self.vectorizer.transform([query_text])
-        sims = cosine_similarity(q_vec, self.policy_matrix)[0]
+    def _ensure_ready(self):
+        if self.vectorizer is None or not self.documents:
+            self.rebuild_index(persist_embeddings=True)
 
-        # If a department is specified, prioritize policies belonging to that department
-        if department:
-            dept_indices = [i for i, p in enumerate(self.policies) if p.get('department') == department]
-            if dept_indices:
-                best_sub_idx = dept_indices[int(np.argmax([sims[i] for i in dept_indices]))]
-                return self.policies[best_sub_idx], float(sims[best_sub_idx])
+    def retrieve(self, query_text, department=None, top_k=3):
+        self._ensure_ready()
+        if not query_text or not self.vectorizer or not self.documents:
+            return []
 
-        best_idx = int(np.argmax(sims))
-        best_score = float(sims[best_idx])
-        return self.policies[best_idx], best_score
+        q_vec = self.vectorizer.transform([normalize_text(query_text)])
+        sims = cosine_similarity(q_vec, self.doc_matrix)[0]
 
-# Singleton knowledge base
-_rag_kb = PolicyRAGKnowledgeBase()
+        scored = []
+        for idx, score in enumerate(sims):
+            doc = self.documents[idx]
+            boosted = float(score)
+            if department and doc.get("department") == department:
+                boosted += 0.18
+            scored.append((boosted, float(score), doc))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        results = []
+        for boosted, raw_sim, doc in scored[:top_k]:
+            item = dict(doc)
+            item["similarity"] = round(raw_sim, 4)
+            item["score"] = round(boosted, 4)
+            meta = _POLICY_BY_CODE.get(doc.get("doc_code"), {})
+            item["sla_hours"] = meta.get("sla_hours", 24)
+            item["default_advisory"] = meta.get("default_advisory", "")
+            item["violation_reason"] = meta.get("violation_reason", "")
+            item["acceptable_scope"] = meta.get("acceptable_scope", [])
+            item["unacceptable_scope"] = meta.get("unacceptable_scope", [])
+            results.append(item)
+        return results
+
+
+_rag_index = UniversityRAGIndex()
+
+
+def list_policy_documents():
+    """Return all university policies and uploaded documents stored in MySQL."""
+    _rag_index._ensure_ready()
+    return list(_rag_index.documents)
+
+
+def add_policy_document(title, department, citation, content):
+    """Store an uploaded policy document in MySQL `rag_documents` and refresh TF-IDF embeddings."""
+    doc_code = f"UPLOAD-{uuid.uuid4().hex[:8].upper()}"
+    doc_id = execute_query(
+        """INSERT INTO rag_documents (doc_code, title, department, citation, content, source_type)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        (doc_code, title[:200], department[:100], citation[:200], content[:15000], "uploaded"),
+        commit=True
+    )
+    _rag_index.rebuild_index(persist_embeddings=True)
+    return doc_id, doc_code
+
+
+def delete_policy_document(doc_id):
+    """Delete an admin-uploaded policy document (default core policies stay protected)."""
+    row = execute_query("SELECT id, source_type FROM rag_documents WHERE id = %s", (doc_id,), fetchone=True)
+    if not row or row.get("source_type") != "uploaded":
+        return False
+    execute_query("DELETE FROM rag_documents WHERE id = %s", (doc_id,), commit=True)
+    _rag_index.rebuild_index(persist_embeddings=True)
+    return True
+
+
+def retrieve_policies(query_text, department=None, top_k=3):
+    return _rag_index.retrieve(query_text, department=department, top_k=top_k)
+
 
 # ==============================================================================
-# 3. ACCEPTABILITY & COMPLIANCE VERIFICATION ENGINE
+# 3. GRIEVANCE POLICY COMPLIANCE & RAG GROUNDING
 # ==============================================================================
 
-# Strong red-flag signals for prohibited / non-compliant requests
-PROHIBITED_PATTERNS = [
-    (r'\b(bypass|hack|crack|tamper)\s+(firewall|proxy|attendance|password|server)\b', "Attempt to bypass security or attendance proxy"),
-    (r'\b(torrent|gambling|crypto\s*mining|porn|dark\s*web)\b', "Use of campus resources for prohibited or high-bandwidth unauthorized services"),
-    (r'\b(leak|leakage|advance)\s+(paper|exam|question|solution)\b', "Solicitation of unauthorized academic examination material"),
-    (r'\b(cancel|waive)\s+(attendance|suspension|ufm|punishment|penalty|fine)\s+(without|mandatory)\b', "Request to nullify statutory disciplinary action without due process"),
-    (r'\b(free\s+degree|passing\s+marks|give\s+me\s+marks|increase\s+marks\s+without)\b', "Unsubstantiated request for academic grading manipulation"),
-    (r'\b(alcohol|drugs|weed|contraband|hookah|substance)\b', "Prohibited contraband / narcotics reference"),
-    (r'\b(jacuzzi|bathtub|luxury|personal\s+maid|private\s+chef)\b', "Unreasonable out-of-scope personal luxury demands in student accommodation"),
-    (r'\b(fake|fraudulent|forged)\s+(certificate|receipt|medical)\b', "Submission or mention of fraudulent documentation")
-]
-
-def evaluate_complaint_acceptability(description, department=None):
+def evaluate_complaint_policy(description, department=None):
     """
-    Evaluates whether a student complaint adheres to university terms and policies.
-    Returns a dict with:
-      - is_acceptable: bool
-      - status: 'Acceptable' | 'Policy Violation' | 'Conditional'
-      - policy_score: float (0.0 to 100.0)
-      - matched_policy: dict (title, id, citation, sla)
-      - citation: str
-      - verdict_title: str
-      - advisory_response: str
-      - violation_reasons: list of str
+    Evaluates a grievance against official university terms, rules, and uploaded documents.
+    Returns:
+      {
+        status: 'Acceptable' | 'Conditional' | 'Policy Violation',
+        policy_score: float (0-100),
+        citation: str,
+        title: str,
+        sla_hours: int,
+        advisory: str,
+        violation_reasons: list[str]
+      }
     """
-    clean_desc = (description or "").strip().lower()
-    if not clean_desc or len(clean_desc) < 8:
+    clean_desc = (description or "").strip()
+    if len(clean_desc) < 8:
         return {
-            "is_acceptable": False,
             "status": "Conditional",
-            "policy_score": 40.0,
-            "matched_policy": CAMPUS_POLICIES[0],
-            "citation": "LPU Student Handbook 2026, Sec 1 (Submission Guidelines)",
-            "verdict_title": "Insufficient Detail",
-            "advisory_response": "Your complaint description is too brief. Please provide specific details (e.g. room/block number, error message, or date of incident) so our automated triage can route it properly.",
-            "violation_reasons": ["Description is too short for meaningful verification."]
+            "policy_score": 45.0,
+            "citation": "LPU Student Grievance Charter, Sec 1",
+            "title": "Submission Detail Guidelines",
+            "sla_hours": 24,
+            "advisory": "Please include specific details (location/block, date, or error message) for faster redressal.",
+            "violation_reasons": ["Description is very brief."]
         }
 
-    # 1. Check for blatant red flags / prohibited patterns
-    for pat, label in PROHIBITED_PATTERNS:
-        if re.search(pat, clean_desc, re.IGNORECASE):
-            policy, _ = _rag_kb.retrieve_relevant_policy(clean_desc, department=department)
+    top_docs = retrieve_policies(clean_desc, department=department, top_k=2)
+    best_doc = top_docs[0] if top_docs else {
+        "title": "LPU Standard Student Grievance Policy",
+        "citation": "LPU Student Grievance Charter, Sec 1",
+        "sla_hours": 24,
+        "similarity": 0.0,
+        "default_advisory": "Grievance logged under University Student Redressal Charter.",
+        "violation_reason": "This request falls outside university grievance redressal policy.",
+        "acceptable_scope": [],
+        "unacceptable_scope": [],
+        "content": ""
+    }
+
+    # 1. Explicit policy violation pattern check
+    for pattern, label in PROHIBITED_PATTERNS:
+        if re.search(pattern, clean_desc, re.IGNORECASE):
             return {
-                "is_acceptable": False,
                 "status": "Policy Violation",
-                "policy_score": 15.0,
-                "matched_policy": policy,
-                "citation": policy.get("citation", "LPU Student Code of Conduct 2026"),
-                "verdict_title": "Rejected: Standard Policy Violation",
-                "advisory_response": policy.get("violation_reason", "This request falls outside the acceptable scope of university grievance redressal standards."),
+                "policy_score": 18.0,
+                "citation": best_doc["citation"],
+                "title": best_doc["title"],
+                "sla_hours": best_doc.get("sla_hours", 24),
+                "advisory": best_doc.get("violation_reason") or (
+                    f"Flagged under {best_doc['citation']}: {label}. Please review university terms."
+                ),
                 "violation_reasons": [label]
             }
 
-    # 2. Retrieve most relevant campus policy via RAG vector similarity
-    policy, relevance = _rag_kb.retrieve_relevant_policy(clean_desc, department=department)
-
-    # 3. Check for exact negative matches against policy unacceptable scope
+    # 2. Meaningful token overlap check against unacceptable scope
+    desc_tokens = _meaningful_tokens(clean_desc)
     unacceptable_hits = []
-    for unacc in policy.get("unacceptable_scope", []):
-        unacc_tokens = set(unacc.lower().split())
-        desc_tokens = set(clean_desc.split())
-        overlap = len(unacc_tokens & desc_tokens)
-        if overlap >= 3 or (len(unacc_tokens) <= 3 and overlap >= 2):
+    for unacc in best_doc.get("unacceptable_scope", []):
+        u_tokens = _meaningful_tokens(unacc)
+        if not u_tokens:
+            continue
+        overlap = len(u_tokens & desc_tokens)
+        if overlap >= 3 or (len(u_tokens) <= 3 and overlap >= 2):
             unacceptable_hits.append(unacc)
 
     if unacceptable_hits:
         return {
-            "is_acceptable": False,
             "status": "Policy Violation",
             "policy_score": 25.0,
-            "matched_policy": policy,
-            "citation": policy["citation"],
-            "verdict_title": f"Rejected Under {policy['id']}",
-            "advisory_response": policy["violation_reason"],
-            "violation_reasons": [f"Matches prohibited scope: '{unacc}'" for unacc in unacceptable_hits]
+            "citation": best_doc["citation"],
+            "title": best_doc["title"],
+            "sla_hours": best_doc.get("sla_hours", 24),
+            "advisory": best_doc.get("violation_reason") or "Request conflicts with university policy terms.",
+            "violation_reasons": [f"Conflicts with prohibited rule: '{u}'" for u in unacceptable_hits]
         }
 
-    # 4. Check for positive scope alignment
-    positive_hits = 0
-    for acc in policy.get("acceptable_scope", []):
-        acc_tokens = set(acc.lower().split())
-        desc_tokens = set(clean_desc.split())
-        overlap = len(acc_tokens & desc_tokens)
-        if overlap >= 2:
-            positive_hits += 1
+    # 3. Positive alignment & uploaded document grounding
+    pos_hits = 0
+    for acc in best_doc.get("acceptable_scope", []):
+        a_tokens = _meaningful_tokens(acc)
+        if a_tokens and len(a_tokens & desc_tokens) >= 2:
+            pos_hits += 1
 
-    # Base score calculated from RAG relevance + positive matching
-    calculated_score = min(98.5, max(65.0, (relevance * 50) + (positive_hits * 15) + 40))
+    sim = float(best_doc.get("similarity", 0.0))
+    score = min(98.0, max(68.0, round(58.0 + (sim * 60.0) + (pos_hits * 12.0), 1)))
 
-    # Determine status
-    if calculated_score >= 60.0:
-        status = "Acceptable"
-        verdict_title = "Acceptable Grievance (Compliant with University Terms)"
-        advisory = policy.get("default_advisory")
+    if best_doc.get("default_advisory"):
+        advisory = best_doc["default_advisory"]
     else:
-        status = "Conditional"
-        verdict_title = "Conditional Review: Supplementary Evidence Required"
-        advisory = (
-            f"Under {policy['citation']}, this complaint has been logged conditionally. "
-            "Please provide supporting proof (such as transaction receipts, screenshot, or witness detail) "
-            "in the case discussion thread to expedite processing."
-        )
+        # Synthesize concise excerpt from uploaded policy document
+        excerpt = best_doc.get("content", "").strip()
+        advisory = f"Matched university document '{best_doc['title']}' ({best_doc['citation']}): {excerpt[:220]}"
 
     return {
-        "is_acceptable": (status == "Acceptable"),
-        "status": status,
-        "policy_score": round(calculated_score, 1),
-        "matched_policy": policy,
-        "citation": policy["citation"],
-        "verdict_title": verdict_title,
-        "advisory_response": advisory,
+        "status": "Acceptable",
+        "policy_score": score,
+        "citation": best_doc["citation"],
+        "title": best_doc["title"],
+        "sla_hours": best_doc.get("sla_hours", 24),
+        "advisory": advisory,
         "violation_reasons": []
     }
 
-# ==============================================================================
-# 4. SIMILAR GRIEVANCE CLUSTERING & SEMANTIC DEDUPLICATION
-# ==============================================================================
-
-def find_similar_complaints(query_text, all_existing_complaints, threshold=0.55):
-    """
-    Scans existing historical complaints and finds semantically similar records.
-    Returns a tuple: (similar_list, cluster_id, is_duplicate)
-    """
-    if not query_text or not all_existing_complaints:
-        return [], None, False
-
-    clean_query = query_text.strip().lower()
-    docs = [clean_query] + [c.get("description", "").lower() for c in all_existing_complaints]
-
-    vec = TfidfVectorizer(ngram_range=(1, 2), stop_words='english', min_df=1)
-    try:
-        matrix = vec.fit_transform(docs)
-    except Exception:
-        return [], None, False
-
-    sims = cosine_similarity(matrix[0:1], matrix[1:])[0]
-
-    similar_results = []
-    cluster_id = None
-    is_duplicate = False
-
-    for i, score in enumerate(sims):
-        if score >= threshold:
-            item = all_existing_complaints[i]
-            sim_pct = round(float(score) * 100, 1)
-            similar_results.append({
-                "id": item.get("id"),
-                "student_name": item.get("student_name") or "Student",
-                "roll_number": item.get("roll_number") or "",
-                "department": item.get("predicted_department"),
-                "priority": item.get("priority_level"),
-                "status": item.get("status"),
-                "description": item.get("description", "")[:120] + "...",
-                "similarity": sim_pct,
-                "created_at": str(item.get("created_at") or "")
-            })
-            if score >= 0.82:
-                is_duplicate = True
-
-    # Sort descending by similarity
-    similar_results.sort(key=lambda x: x["similarity"], reverse=True)
-
-    if similar_results:
-        # Formulate cluster ID based on the top match's department or earliest ID
-        top_match = similar_results[0]
-        dept = top_match.get("department") or "GEN"
-        cluster_id = f"CLUST-{dept[:4].upper()}-{top_match['id']}"
-
-    return similar_results[:8], cluster_id, is_duplicate
 
 # ==============================================================================
-# 5. RAG AI RESOLUTION DRAFT GENERATOR (FOR FACULTY & MASS BROADCAST)
+# 4. AI STUDENT ASSISTANCE CHATBOT (LOCAL RAG + ML ROUTER + LIVE TICKET STATUS)
 # ==============================================================================
 
-def generate_rag_resolution_draft(complaint_description, department, faculty_name="Assigned Officer", similar_count=0):
-    """
-    Synthesizes an intelligent, policy-backed resolution note / student reply
-    incorporating standard departmental operating procedures.
-    """
-    policy, _ = _rag_kb.retrieve_relevant_policy(complaint_description)
-    dept_name = department or policy.get("department", "University")
+_GREETING_RE = re.compile(r'^\s*(hi|hello|hey|good\s+(morning|afternoon|evening)|namaste|help|what\s+can\s+you\s+do)\b', re.IGNORECASE)
+_STATUS_RE = re.compile(r'\b(my\s+ticket|my\s+complaint|my\s+grievance|ticket\s*#?\s*\d+|complaint\s*#?\s*\d+|check\s+status|track\s+my|how\s+many\s+complaints)\b', re.IGNORECASE)
+_POLICY_QUERY_RE = re.compile(
+    r'\b(policy|policies|rule|rules|regulation|terms|procedure|process|how\s+do\s+i|how\s+to|what\s+is\s+the|'
+    r'attendance|75%|sla|deadline|refund\s+policy|anti[\s-]?ragging|closure|allowed|prohibited|guideline|bylaw)\b',
+    re.IGNORECASE
+)
+_COMPLAINT_SIGNAL_RE = re.compile(
+    r'\b(not\s+working|broken|leaking|leak|sparks|fire|stolen|theft|charged\s+twice|deducted\s+twice|'
+    r'stale|cockroach|hair\s+in|missing\s+marks|clash|rude|ragging|harass|disconnected|slow\s+wifi|'
+    r'500\s+error|internal\s+error|overdue\s+fine|no\s+water|power\s+cut|lift\s+stuck|file\s+a\s+complaint)\b',
+    re.IGNORECASE
+)
 
-    # Domain specific technical solutions
-    domain_actions = {
-        "IT": (
-            "1. Verified access point health and re-provisioned IP lease on campus gateway.\n"
-            "2. Reset port configuration and validated bandwidth throughput.\n"
-            "3. Checked server error logs and cleared authentication cache for affected student accounts."
-        ),
-        "Maintenance": (
-            "1. Deputed field plumbing and sanitation team for physical inspection.\n"
-            "2. Isolated faulty joint/valve, replaced worn washer, and restored normal drainage pressure.\n"
-            "3. Conducted hygiene and safety sanitization around the affected facility floor."
-        ),
-        "Cafeteria": (
-            "1. Inspected food preparation counter, temperature logs, and vendor hygiene compliance.\n"
-            "2. Quarantined suspicious food lot and conducted supervisor review with the mess vendor.\n"
-            "3. Initiated payment gateway reversal check for any duplicated UPI debit."
-        ),
-        "Finance": (
-            "1. Audited ERP merchant ledger against bank settlement transaction records.\n"
-            "2. Verified student roll number account reconciliation and cleared fee challan hold.\n"
-            "3. Generated updated no-dues receipt on UMS student portal."
-        ),
-        "Security": (
-            "1. Reviewed CCTV surveillance timeline and logged perimeter patrol report.\n"
-            "2. Escalated incident report to Proctorial Board and deployed stationed security personnel.\n"
-            "3. Contacted student for confidential verification and security reassurance."
-        ),
-        "Examination": (
-            "1. Reconciled internal marks ledger against teacher award sheets.\n"
-            "2. Corrected grade discrepancy in central database and re-issued updated hall ticket.\n"
-            "3. Logged official verification entry with Controller of Examinations (COE)."
-        ),
-        "Library": (
-            "1. Checked automated RFID drop box and shelf return history.\n"
-            "2. Erroneously marked late fine waived on student library ledger.\n"
-            "3. Restored borrowing privileges on digital card."
-        ),
-        "Discipline": (
-            "1. Convened confidential counseling between concerned parties.\n"
-            "2. Recorded mutual undertaking in compliance with University Code of Conduct.\n"
-            "3. Enforced quiet-hours study regulations with floor warden monitoring."
+
+def _extract_relevant_sentences(content, query, max_sentences=3):
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', content or "") if s.strip()]
+    if len(sentences) <= max_sentences:
+        return " ".join(sentences)
+    q_tokens = _meaningful_tokens(query)
+    scored = []
+    for idx, sent in enumerate(sentences):
+        s_tokens = _meaningful_tokens(sent)
+        overlap = len(q_tokens & s_tokens)
+        scored.append((overlap, -idx, sent))
+    scored.sort(reverse=True)
+    chosen = [s for _, _, s in scored[:max_sentences]]
+    return " ".join(chosen)
+
+
+def generate_chatbot_response(user_message, student_id=None, student_name=None):
+    """
+    Conversational AI Student Assistant powered by local RAG, ML classifier,
+    Urgency Scorer (0-100), and live MySQL ticket lookup.
+    """
+    msg = (user_message or "").strip()
+    if not msg:
+        return {
+            "reply": "Please type a question about university rules/policies, your grievance status, or describe an issue you need help with.",
+            "intent": "empty",
+            "sources": [],
+            "analysis": None,
+            "suggested_grievance": None
+        }
+
+    # 1. Greeting / Help intent
+    if _GREETING_RE.search(msg) and len(msg.split()) <= 7:
+        name_part = f" {student_name.split()[0]}" if student_name else ""
+        return {
+            "reply": (
+                f"Hello{name_part}! I am the LPU AI Student Assistant. I can help you:\n"
+                "• Answer questions on university rules, terms & policies (attendance, hostel, Wi-Fi, fees/refunds, exams, library, anti-ragging)\n"
+                "• Check the live status of your submitted grievances\n"
+                "• Preview which department, urgency score (0-100), and policy applies before you submit a complaint\n\n"
+                "Ask me anything or describe your campus issue!"
+            ),
+            "intent": "greeting",
+            "sources": [],
+            "analysis": None,
+            "suggested_grievance": None
+        }
+
+    # 2. Live Ticket Status Lookup (if student is logged in)
+    if _STATUS_RE.search(msg):
+        if not student_id:
+            return {
+                "reply": "Please sign in to the Student Portal with your Registration Number so I can check your personal grievance tickets.",
+                "intent": "status",
+                "sources": [],
+                "analysis": None,
+                "suggested_grievance": None
+            }
+
+        ticket_match = re.search(r'#?\b(\d+)\b', msg)
+        if ticket_match:
+            tid = int(ticket_match.group(1))
+            row = execute_query(
+                """SELECT c.id, c.predicted_department, c.priority_level, c.urgency_score, c.status,
+                          c.completion_note, c.created_at, f.name AS faculty_name
+                   FROM complaints c
+                   LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+                   WHERE c.id = %s AND c.student_id = %s""",
+                (tid, student_id),
+                fetchone=True
+            )
+            if not row:
+                return {
+                    "reply": f"I could not find Grievance Ticket #{tid} under your account. Try asking 'check my tickets' to view your recent submissions.",
+                    "intent": "status",
+                    "sources": [],
+                    "analysis": None,
+                    "suggested_grievance": None
+                }
+            officer = row.get("faculty_name") or f"{row['predicted_department']} Desk"
+            urg = row.get("urgency_score") or 25
+            note_part = f"\nResolution Remarks: {row['completion_note']}" if row.get("completion_note") else ""
+            return {
+                "reply": (
+                    f"Ticket #{row['id']} — {row['predicted_department']} Department\n"
+                    f"• Status: {row['status']}\n"
+                    f"• Priority: {row['priority_level']} (Urgency Score: {urg}/100)\n"
+                    f"• Assigned Officer: {officer}\n"
+                    f"• Lodged: {row['created_at']}{note_part}"
+                ),
+                "intent": "status",
+                "sources": [],
+                "analysis": None,
+                "suggested_grievance": None
+            }
+
+        rows = execute_query(
+            """SELECT c.id, c.predicted_department, c.priority_level, c.urgency_score, c.status, f.name AS faculty_name
+               FROM complaints c
+               LEFT JOIN faculty f ON c.assigned_faculty_id = f.id
+               WHERE c.student_id = %s
+               ORDER BY c.id DESC LIMIT 5""",
+            (student_id,),
+            fetchall=True
+        ) or []
+        if not rows:
+            return {
+                "reply": "You haven't logged any grievances yet. Describe your issue here or use the 'Log Request' tab to submit one!",
+                "intent": "status",
+                "sources": [],
+                "analysis": None,
+                "suggested_grievance": None
+            }
+        lines = [f"Here are your latest {len(rows)} grievance ticket(s):"]
+        for r in rows:
+            urg = r.get("urgency_score") or 25
+            officer = r.get("faculty_name") or r["predicted_department"]
+            lines.append(f"• #{r['id']} [{r['predicted_department']}] — {r['status']} | {r['priority_level']} ({urg}/100) | Officer: {officer}")
+        lines.append("\nYou can also ask 'status of ticket #<id>' for full details.")
+        return {
+            "reply": "\n".join(lines),
+            "intent": "status",
+            "sources": [],
+            "analysis": None,
+            "suggested_grievance": None
+        }
+
+    # 3. Decide between Complaint Analysis vs University Policy/Rules Q&A
+    is_policy_question = bool(_POLICY_QUERY_RE.search(msg)) or msg.endswith('?')
+    is_complaint_desc = bool(_COMPLAINT_SIGNAL_RE.search(msg))
+
+    # 3A. Complaint Pre-Analysis + RAG Policy Grounding
+    if is_complaint_desc and not is_policy_question:
+        pred = predict_department_with_confidence(msg)
+        urg_score, priority, urg_reasons = calculate_urgency(msg)
+        policy_eval = evaluate_complaint_policy(msg, department=pred["department"])
+
+        alt_text = ""
+        if pred["alternatives"]:
+            alt_parts = [f"{a['department']} ({a['confidence']}%)" for a in pred["alternatives"]]
+            alt_text = f" | Alternatives: {', '.join(alt_parts)}"
+
+        if policy_eval["status"] == "Policy Violation":
+            reply = (
+                f"Policy Alert ({policy_eval['citation']}):\n"
+                f"{policy_eval['advisory']}\n\n"
+                f"• Predicted Department: {pred['department']} ({pred['confidence']}%)\n"
+                f"• Policy Verdict: {policy_eval['status']}"
+            )
+            suggested = None
+        else:
+            reply = (
+                f"I analyzed your issue using our AI Router & University Policy RAG:\n"
+                f"• Predicted Department: {pred['department']} ({pred['confidence']}% confidence{alt_text})\n"
+                f"• Urgency Score: {urg_score}/100 — {priority}\n"
+                f"• Applicable Policy: {policy_eval['citation']} (Est. SLA: {policy_eval['sla_hours']}h)\n"
+                f"• Guidance: {policy_eval['advisory']}\n\n"
+                f"Click 'Fill in Grievance Form' below to lodge this ticket immediately."
+            )
+            suggested = msg
+
+        return {
+            "reply": reply,
+            "intent": "grievance_analysis",
+            "sources": [{"title": policy_eval["title"], "citation": policy_eval["citation"]}],
+            "analysis": {
+                "department": pred["department"],
+                "confidence": pred["confidence"],
+                "alternatives": pred["alternatives"],
+                "urgency_score": urg_score,
+                "priority": priority,
+                "policy_status": policy_eval["status"],
+                "citation": policy_eval["citation"],
+                "sla_hours": policy_eval["sla_hours"]
+            },
+            "suggested_grievance": suggested
+        }
+
+    # 3B. University Rules, Policies & Uploaded Documents RAG Q&A
+    docs = retrieve_policies(msg, top_k=2)
+    if docs and docs[0]["similarity"] >= 0.04:
+        primary = docs[0]
+        excerpt = _extract_relevant_sentences(primary["content"], msg, max_sentences=3)
+        sources = [{"title": d["title"], "citation": d["citation"]} for d in docs if d["similarity"] >= 0.04]
+
+        sla_line = f"\n• Standard Resolution SLA: {primary['sla_hours']} hours ({primary['department']} Department)" if primary.get("sla_hours") else ""
+        reply = (
+            f"According to {primary['title']} ({primary['citation']}):\n\n"
+            f"{excerpt}{sla_line}\n\n"
+            f"Need to file an official grievance for this? Just describe your specific problem or use the 'Log Request' tab."
         )
+        return {
+            "reply": reply,
+            "intent": "policy_rag",
+            "sources": sources,
+            "analysis": None,
+            "suggested_grievance": None
+        }
+
+    # 4. General fallback: analyze as potential issue and guide student
+    pred = predict_department_with_confidence(msg)
+    urg_score, priority, _ = calculate_urgency(msg)
+    policy_eval = evaluate_complaint_policy(msg, department=pred["department"])
+    return {
+        "reply": (
+            f"Based on your query, the closest campus desk is **{pred['department']}** "
+            f"(Confidence: {pred['confidence']}%, Urgency Score: {urg_score}/100 — {priority}).\n"
+            f"• Reference Policy: {policy_eval['citation']}\n"
+            f"• Guidance: {policy_eval['advisory']}\n\n"
+            f"You can ask about specific university rules (e.g., attendance, hostel, Wi-Fi, fees, exams, library, anti-ragging) or click below to lodge this as a grievance."
+        ),
+        "intent": "general",
+        "sources": [{"title": policy_eval["title"], "citation": policy_eval["citation"]}],
+        "analysis": {
+            "department": pred["department"],
+            "confidence": pred["confidence"],
+            "urgency_score": urg_score,
+            "priority": priority,
+            "citation": policy_eval["citation"]
+        },
+        "suggested_grievance": msg if len(msg) >= 15 else None
     }
-
-    action_text = domain_actions.get(dept_name, (
-        "1. Deputed departmental officer for on-site inspection.\n"
-        "2. Addressed grievance under University Standard Operating Procedures.\n"
-        "3. Completed verification and notified administration."
-    ))
-
-    mass_prefix = f" [Mass Redressal applied to {similar_count} students affected by this issue]" if similar_count > 1 else ""
-
-    draft = (
-        f"Official Redressal Summary - {dept_name} Desk{mass_prefix}\n\n"
-        f"Dear Student,\n"
-        f"Your grievance has been investigated under {policy['citation']}.\n\n"
-        f"Action Taken by {faculty_name}:\n"
-        f"{action_text}\n\n"
-        f"The issue has been addressed in full accordance with university standards. "
-        f"Please verify resolution and submit your satisfaction feedback to complete case closure."
-    )
-    return draft
-
-# ==============================================================================
-# 6. MULTI-FACTOR HAZARD RISK & SLA CALCULATOR
-# ==============================================================================
-
-def calculate_hazard_risk_score(description):
-    """
-    Computes a 0 to 100 Hazard & Risk Score based on safety, infrastructure,
-    academic impact, and panic words.
-    """
-    text = (description or "").lower()
-    score = 10  # baseline
-
-    hazard_weights = [
-        (r'\b(fire|sparks?|flames?|gas\s*leak|short\s*circuit|explosion)\b', 45, "Severe Fire / Explosion Hazard"),
-        (r'\b(shock|electrocution|live\s*wire)\b', 40, "Electrical Hazard"),
-        (r'\b(suicid|bleeding|unconscious|poison|hospital|ambulance)\b', 50, "Medical Emergency"),
-        (r'\b(ragging|harass|assault|violence|threat|stalking)\b', 40, "Personal Safety / UGC Anti-Ragging"),
-        (r'\b(flooding|ceiling\s*collapse|broken\s*glass|elevator\s*stuck)\b', 30, "Infrastructure Hazard"),
-        (r'\b(exam\s*today|tomorrow\s*exam|hall\s*ticket|admit\s*card)\b', 25, "Urgent Academic Deadline"),
-        (r'\b(theft|stolen|robbery|laptop\s*stolen)\b', 25, "Campus Security / Loss of Property")
-    ]
-
-    detected_reasons = []
-    for pat, weight, label in hazard_weights:
-        if re.search(pat, text):
-            score += weight
-            detected_reasons.append(label)
-
-    score = min(100, max(5, score))
-    return score, detected_reasons
-
-def calculate_dynamic_sla(priority_level, department, created_at_dt=None):
-    """
-    Calculates target resolution SLA in hours and exact deadline timestamp.
-    """
-    if priority_level == 'High Priority':
-        hours = 6
-    elif department in ('IT', 'Cafeteria'):
-        hours = 18
-    elif department in ('Maintenance', 'Discipline'):
-        hours = 24
-    else:
-        hours = 48
-
-    base_time = created_at_dt or datetime.datetime.now()
-    deadline = base_time + datetime.timedelta(hours=hours)
-    return hours, deadline
-
-def evaluate_sla_breach_risk(created_at, sla_hours, current_status):
-    """
-    Evaluates whether an active ticket is at risk of breaching SLA.
-    Returns: ('Low' | 'Medium' | 'High' | 'Breached', hours_left_str)
-    """
-    if current_status in ('Closed', 'Resolved'):
-        return 'Resolved', 'Resolved on time'
-
-    if not created_at:
-        return 'Low', 'Normal'
-
-    try:
-        if isinstance(created_at, str):
-            # Parse common formats
-            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S'):
-                try:
-                    dt = datetime.datetime.strptime(created_at, fmt)
-                    break
-                except ValueError:
-                    pass
-            else:
-                return 'Low', 'Tracking'
-        else:
-            dt = created_at
-
-        now = datetime.datetime.now()
-        elapsed = (now - dt).total_seconds() / 3600.0
-        remaining = sla_hours - elapsed
-
-        if remaining <= 0:
-            return 'Breached', f'Breached by {abs(round(remaining, 1))}h'
-        elif remaining <= (sla_hours * 0.25):
-            return 'High', f'{round(remaining, 1)}h remaining (Urgent)'
-        elif remaining <= (sla_hours * 0.5):
-            return 'Medium', f'{round(remaining, 1)}h remaining'
-        else:
-            return 'Low', f'{round(remaining, 1)}h remaining'
-    except Exception:
-        return 'Low', 'Normal'
-
-# ==============================================================================
-# 7. AUTOMATED TOPIC & HASHTAG GENERATOR
-# ==============================================================================
-
-def generate_topic_hashtags(description, department):
-    """
-    Extracts relevant campus sub-topics and hashtags for quick filtering.
-    """
-    text = (description or "").lower()
-    tags = [f"#{department.replace(' ', '')}"]
-
-    topic_rules = [
-        (r'\b(wifi|internet|network|router|lan)\b', '#WiFi'),
-        (r'\b(water|pipe|leak|tap|sink|toilet|flush)\b', '#Plumbing'),
-        (r'\b(electricity|spark|light|fan|ac|switchboard|power)\b', '#Electrical'),
-        (r'\b(mess|food|canteen|lunch|dinner|breakfast|hygiene)\b', '#FoodSafety'),
-        (r'\b(fee|receipt|refund|scholarship|challan|payment)\b', '#FeeAccounts'),
-        (r'\b(ragging|harass|safety|guard|cctv|bully)\b', '#CampusSafety'),
-        (r'\b(exam|marks|grade|hall\s*ticket|admit\s*card)\b', '#Exams'),
-        (r'\b(book|fine|library|journal)\b', '#Library'),
-        (r'\b(hostel|room|bed|warden)\b', '#HostelLife'),
-        (r'\b(emergency|urgent|sos|fire|critical)\b', '#UrgentSOS')
-    ]
-
-    for pat, tag in topic_rules:
-        if re.search(pat, text):
-            if tag not in tags:
-                tags.append(tag)
-
-    return " ".join(tags[:4])

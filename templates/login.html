@@ -19,13 +19,8 @@
             <div class="text-muted small fw-bold text-uppercase tracking-wider mt-1">
                 Student Grievance System
             </div>
-            <div class="d-flex justify-content-center align-items-center gap-2 mt-2">
-                <span class="badge bg-light text-secondary border px-3 py-1 font-monospace small">
-                    Grievance &amp; Service Gateway
-                </span>
-                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="themeToggleBtn" title="Toggle Dark/Light Mode">
-                    <i class="bi bi-moon-stars"></i>
-                </button>
+            <div class="badge bg-light text-secondary border px-3 py-1 mt-2 font-monospace small">
+                Grievance &amp; Service Gateway
             </div>
         </div>
 
@@ -59,7 +54,7 @@
                 </button>
                 <button type="button" class="portal-role-btn role-faculty {% if active_tab == 'faculty' %}active{% endif %}" id="tabBtnFaculty" data-tab="faculty">
                     <i class="bi bi-person-workspace"></i>
-                    <span>Assigned Teachers</span>
+                    <span>Assigned Desk</span>
                 </button>
                 <button type="button" class="portal-role-btn role-admin {% if active_tab == 'admin' %}active{% endif %}" id="tabBtnAdmin" data-tab="admin">
                     <i class="bi bi-shield-lock-fill"></i>
@@ -71,11 +66,14 @@
                  PANEL 1: USER VIEW (STUDENT PORTAL LOGIN)
                  ========================================================== -->
             <section id="panelStudent" class="portal-tab-panel {% if active_tab != 'student' %}d-none{% endif %}">
-                <div class="mb-3 pb-2 border-bottom">
-                    <h6 class="fw-bold mb-0 text-dark">
-                        <i class="bi bi-person-badge text-warning me-1"></i> Student Service Access
-                    </h6>
-                    <small class="text-muted">Lodge grievances and track resolution status</small>
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                    <div>
+                        <h6 class="fw-bold mb-0 text-dark">
+                            <i class="bi bi-person-badge text-warning me-1"></i> Student Service Access
+                        </h6>
+                        <small class="text-muted">Lodge grievances and track resolution status</small>
+                    </div>
+                    <span class="badge bg-warning text-dark fw-bold">User View</span>
                 </div>
 
                 <form method="POST" action="/login">
@@ -95,7 +93,7 @@
                                 class="form-control border-start-0 ps-0" 
                                 required 
                                 placeholder="Enter your Registration Number" 
-                                autofocus
+                                {% if active_tab == 'student' %}autofocus{% endif %}
                             >
                         </div>
                     </div>
@@ -107,30 +105,34 @@
             </section>
 
             <!-- ==========================================================
-                 PANEL 2: ASSIGNED TEACHERS ROLES (FACULTY OPERATIONS DESK)
+                 PANEL 2: ASSIGNED TASK ROLES (FACULTY OPERATIONS DESK)
                  ========================================================== -->
             <section id="panelFaculty" class="portal-tab-panel {% if active_tab != 'faculty' %}d-none{% endif %}">
-                <div class="mb-3 pb-2 border-bottom">
-                    <h6 class="fw-bold mb-0" style="color: #065f46;">
-                        <i class="bi bi-person-workspace me-1"></i> Assigned Teachers Desk
-                    </h6>
-                    <small class="text-muted">Manage assigned tasks (completed, waited, in-progress) and send messages directly to students.</small>
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                    <div>
+                        <h6 class="fw-bold mb-0" style="color: #065f46;">
+                            <i class="bi bi-person-workspace me-1"></i> Assigned Task Desk
+                        </h6>
+                        <small class="text-muted">Departmental faculty &amp; resolution staff operations</small>
+                    </div>
+                    <span class="badge text-white fw-bold" style="background: #059669;">Assigned Roles</span>
                 </div>
 
                 <form method="POST" action="/login">
                     <input type="hidden" name="role_type" value="faculty">
                     
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <label class="form-label text-dark fw-bold small">
-                            Select Assigned Teacher / Department Desk <span class="text-danger">*</span>
+                            Select Assigned Officer / Department Desk <span class="text-danger">*</span>
                         </label>
                         <div class="input-group">
                             <span class="input-group-text bg-light text-muted border-end-0">
                                 <i class="bi bi-person-lines-fill"></i>
                             </span>
                             <select name="faculty_id" id="facultySelect" class="form-select border-start-0 ps-0" required>
+                                <option value="" disabled selected>-- Select Your Officer Profile --</option>
                                 {% for fac in faculty_list %}
-                                <option value="{{ fac.id }}" {% if fac.name == 'Parth Singhal' or fac.id == 1 %}selected{% endif %}>
+                                <option value="{{ fac.id }}">
                                     {{ fac.name }} &middot; {{ fac.department }} Desk ({{ fac.email }})
                                 </option>
                                 {% endfor %}
@@ -138,8 +140,10 @@
                         </div>
                     </div>
 
+
+
                     <button type="submit" class="btn btn-success w-100 py-2 fw-bold shadow-sm" style="background: #059669; border-color: #059669;">
-                        <i class="bi bi-shield-check me-1"></i> Open Assigned Teachers Desk
+                        <i class="bi bi-shield-check me-1"></i> Open Assigned Operations Desk
                     </button>
                 </form>
             </section>
@@ -148,11 +152,14 @@
                  PANEL 3: ADMIN VIEW (CENTRAL ADMINISTRATIVE CONSOLE)
                  ========================================================== -->
             <section id="panelAdmin" class="portal-tab-panel {% if active_tab != 'admin' %}d-none{% endif %}">
-                <div class="mb-3 pb-2 border-bottom">
-                    <h6 class="fw-bold mb-0 text-danger">
-                        <i class="bi bi-shield-lock-fill me-1"></i> Central Admin Console
-                    </h6>
-                    <small class="text-muted">Manage campus-wide assignments, escalations, student updates, and verified final closure.</small>
+                <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                    <div>
+                        <h6 class="fw-bold mb-0 text-danger">
+                            <i class="bi bi-shield-lock-fill me-1"></i> Central Admin Console
+                        </h6>
+                        <small class="text-muted">University governance, triage oversight &amp; analytics</small>
+                    </div>
+                    <span class="badge bg-danger text-white fw-bold">Admin View</span>
                 </div>
 
                 <form method="POST" action="/login">
@@ -231,17 +238,6 @@
         document.getElementById('tabBtnStudent')?.addEventListener('click', () => switchRoleTab('student'));
         document.getElementById('tabBtnFaculty')?.addEventListener('click', () => switchRoleTab('faculty'));
         document.getElementById('tabBtnAdmin')?.addEventListener('click', () => switchRoleTab('admin'));
-        const themeBtn = document.getElementById('themeToggleBtn');
-        if (localStorage.getItem('sgs_theme') === 'dark') {
-            document.body.classList.add('dark-mode');
-            if (themeBtn) themeBtn.innerHTML = '<i class="bi bi-sun"></i>';
-        }
-        themeBtn?.addEventListener('click', () => {
-            document.body.classList.toggle('dark-mode');
-            const isDark = document.body.classList.contains('dark-mode');
-            localStorage.setItem('sgs_theme', isDark ? 'dark' : 'light');
-            themeBtn.innerHTML = isDark ? '<i class="bi bi-sun"></i>' : '<i class="bi bi-moon-stars"></i>';
-        });
     </script>
 </body>
 </html>
