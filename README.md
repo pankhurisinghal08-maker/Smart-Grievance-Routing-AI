@@ -98,7 +98,7 @@ python app.py
 ## Portal Access & Roles
 
 - **Unified Portal Gateway**: `http://127.0.0.1:5000/login`
-  - **Student View**: Log in with your University Registration Number (e.g. `12509701`).
+  - **Student View**: Log in with your University Registration Number and Password (default password is your Registration Number itself, e.g. `12515019` / `12515019`).
   - **Assigned Desk**: Select your assigned faculty officer profile (e.g. `Parth Singhal - IT Desk`).
   - **Admin View**: Sign in with administrator credentials:
     - **Username**: `Pankhuri`

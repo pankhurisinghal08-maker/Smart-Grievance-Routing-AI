@@ -98,6 +98,29 @@
                         </div>
                     </div>
 
+                    <div class="mb-4">
+                        <label class="form-label text-dark fw-bold small">
+                            Password <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted border-end-0">
+                                <i class="bi bi-key-fill"></i>
+                            </span>
+                            <input 
+                                name="password" 
+                                id="studentPass"
+                                type="password" 
+                                class="form-control border-start-0 border-end-0 ps-0" 
+                                required 
+                                placeholder="Enter your password (Registration Number)" 
+                            >
+                            <button type="button" class="btn btn-outline-secondary border-start-0 bg-light text-muted" id="toggleStudentPass" tabindex="-1" title="Show/Hide Password">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <small class="text-muted" style="font-size: 0.74rem;">Default student password is your Registration Number.</small>
+                    </div>
+
                     <button type="submit" class="btn btn-lpu-orange w-100 py-2 fw-bold shadow-sm">
                         <i class="bi bi-box-arrow-in-right me-1"></i> Access Student Portal
                     </button>
@@ -238,6 +261,15 @@
         document.getElementById('tabBtnStudent')?.addEventListener('click', () => switchRoleTab('student'));
         document.getElementById('tabBtnFaculty')?.addEventListener('click', () => switchRoleTab('faculty'));
         document.getElementById('tabBtnAdmin')?.addEventListener('click', () => switchRoleTab('admin'));
+
+        const toggleStudentPass = document.getElementById('toggleStudentPass');
+        const studentPassInput = document.getElementById('studentPass');
+        toggleStudentPass?.addEventListener('click', () => {
+            if (!studentPassInput) return;
+            const isHidden = studentPassInput.type === 'password';
+            studentPassInput.type = isHidden ? 'text' : 'password';
+            toggleStudentPass.innerHTML = isHidden ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
+        });
     </script>
 </body>
 </html>

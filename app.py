@@ -38,7 +38,7 @@ def student_for_roll(roll_number):
         return None
     cleaned = str(roll_number).strip()
     return execute_query(
-        'SELECT id, name, roll_number FROM users WHERE roll_number = %s AND LOWER(role) = %s',
+        'SELECT id, name, roll_number, password FROM users WHERE roll_number = %s AND LOWER(role) = %s',
         (cleaned, 'student'),
         fetchone=True
     )
@@ -190,23 +190,28 @@ def login():
     if request.method == 'POST':
         role_type = request.form.get('role_type', '').strip().lower()
 
-        # 1. STUDENT LOGIN
+        # 1. STUDENT LOGIN (Registration Number + Password where default password is Registration Number)
         if role_type == 'student':
             active_tab = 'student'
             roll = request.form.get('roll_number', '').strip()
-            if not roll:
-                error = 'Please enter your Registration Number.'
+            pwd = request.form.get('password', '').strip()
+            if not roll or not pwd:
+                error = 'Please enter both your Registration Number and Password.'
             else:
                 student = student_for_roll(roll)
-                if student:
-                    session.clear()
-                    session['role'] = 'student'
-                    session['student_id'] = student['id']
-                    session['student_name'] = student['name']
-                    session['roll_number'] = student['roll_number']
-                    log_access('student', student['id'], student['name'], 'LOGIN', f"Roll: {student['roll_number']}")
-                    return redirect(url_for('student_portal'))
-                error = f"Registration number '{roll}' was not found in the university database. Please verify your Registration Number."
+                if not student:
+                    error = f"Registration number '{roll}' was not found in the university database. Please verify your Registration Number."
+                else:
+                    expected_pwd = (student.get('password') or '').strip() or student['roll_number']
+                    if pwd == expected_pwd or pwd == student['roll_number']:
+                        session.clear()
+                        session['role'] = 'student'
+                        session['student_id'] = student['id']
+                        session['student_name'] = student['name']
+                        session['roll_number'] = student['roll_number']
+                        log_access('student', student['id'], student['name'], 'LOGIN', f"Roll: {student['roll_number']}")
+                        return redirect(url_for('student_portal'))
+                    error = 'Invalid password. Please enter your Registration Number as your password.'
 
         # 2. FACULTY ASSIGNED DESK LOGIN
         elif role_type == 'faculty':

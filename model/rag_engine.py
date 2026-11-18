@@ -34,10 +34,18 @@ def _get_gemini_client():
         from google import genai
         _gemini_client = genai.Client(api_key=api_key)
         _gemini_cached_key = api_key
+        print(f"[Gemini] Client initialized successfully (key: ...{api_key[-6:]})")
         return _gemini_client
     except Exception as e:
         print(f"[Gemini Warning] Could not initialize google-genai client: {e}")
         return None
+
+
+# Pre-warm the Gemini client at module load time (avoids cold-start latency on first chat request)
+try:
+    _get_gemini_client()
+except Exception:
+    pass
 
 
 def is_gemini_configured():
@@ -695,17 +703,26 @@ def evaluate_complaint_policy(description, department=None):
 # 4. AI STUDENT ASSISTANCE CHATBOT (LOCAL RAG + ML ROUTER + LIVE TICKET STATUS)
 # ==============================================================================
 
-_GREETING_RE = re.compile(r'^\s*(hi|hello|hey|good\s+(morning|afternoon|evening)|namaste|help|what\s+can\s+you\s+do)\b', re.IGNORECASE)
+_GREETING_RE = re.compile(
+    r'^\s*(hi+|hello+|hey+|hlo+|yo|sup|good\s+(morning|afternoon|evening|night)|namaste|how\s+are\s+you|how\s+r\s+u|'
+    r'how\s+is\s+it\s+going|what\'?s\s+up|thanks?|thank\s+you|bye|goodbye|ok|okay|cool|nice|who\s+are\s+you|'
+    r'help|what\s+can\s+you\s+do)\b',
+    re.IGNORECASE
+)
 _STATUS_RE = re.compile(r'\b(my\s+ticket|my\s+complaint|my\s+grievance|ticket\s*#?\s*\d+|complaint\s*#?\s*\d+|check\s+status|track\s+my|how\s+many\s+complaints)\b', re.IGNORECASE)
 _POLICY_QUERY_RE = re.compile(
-    r'\b(policy|policies|rule|rules|regulation|terms|procedure|process|how\s+do\s+i|how\s+to|what\s+is\s+the|'
-    r'attendance|75%|sla|deadline|refund\s+policy|anti[\s-]?ragging|closure|allowed|prohibited|guideline|bylaw)\b',
+    r'\b(policy|policies|rule|rules|regulation|terms|procedure|process|bylaw|guideline|circular|'
+    r'attendance|75%|sla|refund\s+policy|anti[\s-]?ragging|closure|allowed|prohibited|lpu\s+rule|university\s+rule|'
+    r'hostel\s+rule|library\s+rule|exam\s+rule|fee\s+refund|scholarship\s+rule|grievance\s+closure)\b',
     re.IGNORECASE
 )
 _COMPLAINT_SIGNAL_RE = re.compile(
     r'\b(not\s+working|broken|leaking|leak|sparks|fire|stolen|theft|charged\s+twice|deducted\s+twice|'
-    r'stale|cockroach|hair\s+in|missing\s+marks|clash|rude|ragging|harass|disconnected|slow\s+wifi|'
-    r'500\s+error|internal\s+error|overdue\s+fine|no\s+water|power\s+cut|lift\s+stuck|file\s+a\s+complaint)\b',
+    r'stale|cockroach|hair\s+in|missing\s+marks|exam\s+clash|rude\s+staff|ragging|harass|disconnected|slow\s+wifi|'
+    r'500\s+error|internal\s+error|overdue\s+fine|no\s+water|power\s+cut|lift\s+stuck|file\s+a\s+complaint|'
+    r'lodge\s+a\s+complaint|water\s+cooler|washroom|flush\s+not|ac\s+not|fan\s+not|short\s+circuit|'
+    r'is\s+down|are\s+down|went\s+down|not\s+connecting|cannot\s+connect|can\'?t\s+connect|'
+    r'portal\s+error|ums\s+error|lms\s+error|room\s+lock|broken\s+door|broken\s+window)\b',
     re.IGNORECASE
 )
 
@@ -728,21 +745,27 @@ def _extract_relevant_sentences(content, query, max_sentences=3):
 def _build_rag_context_for_gemini(user_message, local_result, student_id=None, student_name=None):
     """Assemble grounded university policy docs, ML routing/urgency analysis, and live student tickets for Gemini."""
     sections = []
+    intent = local_result.get("intent", "general_chat")
 
     if student_name:
         sections.append(f"Logged-in Student: {student_name}")
 
-    # 1. Retrieved University Policy Documents (including Admin-uploaded circulars)
-    docs = retrieve_policies(user_message, top_k=3)
-    if docs:
-        pol_lines = []
-        for d in docs:
-            pol_lines.append(
-                f"- [{d['department']}] {d['title']} ({d['citation']}): {d['content'][:600]}"
-            )
-        sections.append("Retrieved University Policies & Rules:\n" + "\n".join(pol_lines))
+    sections.append(f"Detected Intent: {intent}")
 
-    # 2. ML Department Routing & Urgency Score Analysis
+    # 1. Include Retrieved University Policies only when relevant (or policy/grievance intent)
+    docs = retrieve_policies(user_message, top_k=3)
+    relevant_docs = [d for d in docs if d.get("similarity", 0) >= 0.08]
+    if intent in ("policy_rag", "grievance_analysis") and not relevant_docs and docs:
+        relevant_docs = docs[:2]
+
+    if relevant_docs:
+        pol_lines = [
+            f"- [{d['department']}] {d['title']} ({d['citation']}): {d['content'][:600]}"
+            for d in relevant_docs
+        ]
+        sections.append("Retrieved LPU University Policies & Uploaded Circulars:\n" + "\n".join(pol_lines))
+
+    # 2. Include AI Triage Analysis only when user actually described a campus grievance
     analysis = local_result.get("analysis")
     if analysis:
         alt_part = ""
@@ -757,7 +780,7 @@ def _build_rag_context_for_gemini(user_message, local_result, student_id=None, s
             f"- Policy Status: {analysis.get('policy_status', 'Acceptable')} | Citation: {analysis.get('citation', '')}"
         )
 
-    # 3. Live Student Ticket Status from MySQL (if student is logged in)
+    # 3. Live Student Ticket Status from MySQL (always available if logged in so follow-ups work seamlessly)
     if student_id:
         try:
             rows = execute_query(
@@ -788,58 +811,70 @@ def _build_rag_context_for_gemini(user_message, local_result, student_id=None, s
     return "\n\n".join(sections)
 
 
-def _call_gemini_rag(user_message, context_block, previous_interaction_id=None):
-    """Call Gemini Interactions API grounded on retrieved RAG context; returns (text, interaction_id) or (None, None)."""
+def _call_gemini_rag(user_message, context_block, previous_interaction_id=None, intent="general_chat"):
+    """
+    Call Gemini Interactions API so the chatbot can answer EVERY question:
+      - LPU policies, uploaded circulars, grievance triage & live ticket tracking (strictly grounded in context)
+      - Casual chat, greetings ('hey', 'how are you'), general knowledge, coding/study help, and out-of-box questions
+    Includes automatic fast fallback to gemini-3.5-flash-lite if the primary model hits a transient error/timeout.
+    """
     client = _get_gemini_client()
     if client is None:
         return None, None
 
-    model_name = (os.getenv("GEMINI_MODEL") or "gemini-4-hydrogen").strip() or "gemini-4-hydrogen"
+    primary_model = (os.getenv("GEMINI_MODEL") or "gemini-4-hydrogen").strip() or "gemini-4-hydrogen"
+    candidate_models = [primary_model]
+    if primary_model != "gemini-3.5-flash-lite":
+        candidate_models.append("gemini-3.5-flash-lite")
+
     system_instruction = (
-        "You are the official LPU (Lovely Professional University) AI Student Grievance & Policy Assistant. "
-        "Answer clearly, politely, and concisely (under 140 words) using ONLY the grounded university policies, "
-        "uploaded circulars, AI routing analysis, and live student ticket records provided in the context. "
-        "Always cite the exact policy citation when answering policy/rule questions. "
-        "Never invent university rules, fees, or ticket statuses that are not in the context. "
-        "If the student describes a valid campus issue, briefly state the predicted department, confidence %, "
-        "urgency score (0-100), applicable policy, and let them know they can click 'Fill in Grievance Form' below."
+        "You are the friendly, intelligent LPU (Lovely Professional University) AI Student Assistant powered by Gemini. "
+        "You MUST answer every question the student asks — including casual greetings ('hey', 'how are you?'), "
+        "friendly chat, jokes, general knowledge, study/coding help, career/exam tips, or any out-of-the-box question — "
+        "warmly, naturally, and accurately using your full knowledge! "
+        "When the student asks specifically about LPU university rules, policies, SLAs, attendance, fees, hostel, "
+        "exams, or uploaded circulars, rely on the Retrieved LPU University Policies in the context and cite the exact "
+        "policy citation (do not invent fake LPU rules). "
+        "When the student asks about their personal grievance tickets, report the exact live ticket details from the "
+        "Student's Recent Grievance Tickets context (never fabricate ticket IDs or statuses). "
+        "When the student describes a campus grievance/problem and AI Grievance Triage Analysis is provided, briefly "
+        "summarize the predicted department, confidence %, urgency score (0-100), and applicable policy, and mention "
+        "they can click 'Fill in Grievance Form' below. "
+        "Keep answers clear, helpful, well-formatted with concise Markdown (**bold** or short bullet points when helpful), "
+        "and avoid unnecessarily refusing or deflecting general questions."
     )
 
     prompt_input = (
-        f"[GROUNDED CAMPUS CONTEXT]\n{context_block}\n\n"
+        f"[CAMPUS CONTEXT]\n{context_block}\n\n"
         f"[STUDENT MESSAGE]\n{user_message}"
     )
 
-    kwargs = {
-        "model": model_name,
-        "input": prompt_input,
-        "system_instruction": system_instruction,
-        "generation_config": {"temperature": 0.4, "max_output_tokens": 1500},
-        "timeout": 30,
-    }
-    if previous_interaction_id:
-        kwargs["previous_interaction_id"] = previous_interaction_id
+    for idx, model_name in enumerate(candidate_models):
+        # Use a smaller token budget for simple greetings/status (faster) vs policy/grievance (fuller answer)
+        is_simple = intent in ("greeting", "status", "general_chat")
+        max_tokens = 400 if is_simple else 1500
 
-    try:
-        interaction = client.interactions.create(**kwargs)
-        text = (interaction.output_text or "").strip()
-        if text:
-            return text, interaction.id
-        return None, None
-    except Exception as e:
-        # Retry once without previous_interaction_id in case the stored interaction expired
-        if previous_interaction_id:
-            try:
-                kwargs.pop("previous_interaction_id", None)
-                interaction = client.interactions.create(**kwargs)
-                text = (interaction.output_text or "").strip()
-                if text:
-                    return text, interaction.id
-            except Exception as retry_err:
-                print(f"[Gemini Fallback] Interactions API error ({retry_err}); using local RAG response.")
-                return None, None
-        print(f"[Gemini Fallback] Interactions API error ({e}); using local RAG response.")
-        return None, None
+        kwargs = {
+            "model": model_name,
+            "input": prompt_input,
+            "system_instruction": system_instruction,
+            "generation_config": {"temperature": 0.6, "max_output_tokens": max_tokens},
+            "timeout": 25,
+        }
+        if previous_interaction_id and idx == 0:
+            kwargs["previous_interaction_id"] = previous_interaction_id
+
+        try:
+            interaction = client.interactions.create(**kwargs)
+            text = (interaction.output_text or "").strip()
+            if text:
+                return text, interaction.id
+        except Exception as e:
+            # If first attempt failed with previous_interaction_id, retry clean on fallback model
+            print(f"[Gemini Retry] Model '{model_name}' failed ({type(e).__name__}: {str(e)[:120]})")
+            continue
+
+    return None, None
 
 
 def _generate_local_chatbot_response(user_message, student_id=None, student_name=None):
@@ -1006,10 +1041,11 @@ def _generate_local_chatbot_response(user_message, student_id=None, student_name
 
     # 3B. University Rules, Policies & Uploaded Documents RAG Q&A
     docs = retrieve_policies(msg, top_k=2)
-    if docs and docs[0]["similarity"] >= 0.04:
+    rag_threshold = 0.05 if is_policy_question else 0.16
+    if docs and docs[0]["similarity"] >= rag_threshold:
         primary = docs[0]
         excerpt = _extract_relevant_sentences(primary["content"], msg, max_sentences=3)
-        sources = [{"title": d["title"], "citation": d["citation"]} for d in docs if d["similarity"] >= 0.04]
+        sources = [{"title": d["title"], "citation": d["citation"]} for d in docs if d["similarity"] >= rag_threshold]
 
         sla_line = f"\n• Standard Resolution SLA: {primary['sla_hours']} hours ({primary['department']} Department)" if primary.get("sla_hours") else ""
         reply = (
@@ -1025,28 +1061,18 @@ def _generate_local_chatbot_response(user_message, student_id=None, student_name
             "suggested_grievance": None
         }
 
-    # 4. General fallback: analyze as potential issue and guide student
-    pred = predict_department_with_confidence(msg)
-    urg_score, priority, _ = calculate_urgency(msg)
-    policy_eval = evaluate_complaint_policy(msg, department=pred["department"])
+    # 4. General / Out-of-Box Conversation (clean fallback when offline; handled freely by Gemini when online)
+    name_part = f" {student_name.split()[0]}" if student_name else ""
     return {
         "reply": (
-            f"Based on your query, the closest campus desk is **{pred['department']}** "
-            f"(Confidence: {pred['confidence']}%, Urgency Score: {urg_score}/100 — {priority}).\n"
-            f"• Reference Policy: {policy_eval['citation']}\n"
-            f"• Guidance: {policy_eval['advisory']}\n\n"
-            f"You can ask about specific university rules (e.g., attendance, hostel, Wi-Fi, fees, exams, library, anti-ragging) or click below to lodge this as a grievance."
+            f"Hi{name_part}! I'm doing great and ready to help. "
+            "You can ask me anything — campus rules & policies (attendance, fees, hostel, Wi-Fi, exams, library), "
+            "check your ticket status, or describe a campus issue for instant routing!"
         ),
-        "intent": "general",
-        "sources": [{"title": policy_eval["title"], "citation": policy_eval["citation"]}],
-        "analysis": {
-            "department": pred["department"],
-            "confidence": pred["confidence"],
-            "urgency_score": urg_score,
-            "priority": priority,
-            "citation": policy_eval["citation"]
-        },
-        "suggested_grievance": msg if len(msg) >= 15 else None
+        "intent": "general_chat",
+        "sources": [],
+        "analysis": None,
+        "suggested_grievance": None
     }
 
 
@@ -1080,7 +1106,8 @@ def generate_chatbot_response(user_message, student_id=None, student_name=None, 
         gemini_text, new_interaction_id = _call_gemini_rag(
             msg,
             context_block,
-            previous_interaction_id=previous_interaction_id
+            previous_interaction_id=previous_interaction_id,
+            intent=local_result.get("intent", "general_chat")
         )
         if gemini_text:
             local_result["reply"] = gemini_text

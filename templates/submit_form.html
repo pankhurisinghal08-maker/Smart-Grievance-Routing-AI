@@ -14,7 +14,6 @@
         <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex align-items-center gap-3">
                 <div class="d-flex align-items-center gap-2">
-                    <span class="rms-badge">SGS</span>
                     <div>
                         <div class="lpu-brand-title">
                             <img src="{{ url_for('static', filename='images/lpu_logo.png') }}" alt="LPU Logo" class="lpu-top-logo me-2"> LOVELY PROFESSIONAL UNIVERSITY
@@ -231,16 +230,34 @@
                                 <i class="bi bi-tools text-primary"></i> Maintenance: Water Leak
                             </span>
                             <span class="lpu-chip" data-prompt="The student portal shows an internal error while downloading fee receipts.">
-                                <i class="bi bi-laptop text-info"></i> IT: Fee Receipt Download Error
+                                <i class="bi bi-laptop text-info"></i> IT: Fee Receipt Error
                             </span>
                             <span class="lpu-chip" data-prompt="Emergency: Fire sparks and smoke coming from electrical switchboard in Block 34!">
                                 <i class="bi bi-fire text-danger"></i> Emergency: Electrical Sparks
                             </span>
                             <span class="lpu-chip" data-prompt="The library catalogue shows a returned textbook as overdue with pending fine.">
-                                <i class="bi bi-book text-warning"></i> Library: Book Overdue Fine
+                                <i class="bi bi-book text-warning"></i> Library: Overdue Fine
                             </span>
                             <span class="lpu-chip" data-prompt="The cafeteria lunch counter charged twice after the QR payment appeared to fail.">
-                                <i class="bi bi-cup-hot text-success"></i> Cafeteria: Payment Charged Twice
+                                <i class="bi bi-cup-hot text-success"></i> Cafeteria: Double Charge
+                            </span>
+                            <span class="lpu-chip" data-prompt="My internal assessment marks are missing on the UMS grade sheet for the subject Programming Fundamentals.">
+                                <i class="bi bi-journal-check text-primary"></i> Academics: Missing Marks
+                            </span>
+                            <span class="lpu-chip" data-prompt="Two of my end-term examinations are scheduled in the same time slot on the official date sheet.">
+                                <i class="bi bi-calendar-x text-danger"></i> Examination: Exam Clash
+                            </span>
+                            <span class="lpu-chip" data-prompt="My class timetable has not been updated on UMS and the classroom assignment is incorrect.">
+                                <i class="bi bi-calendar3 text-info"></i> Academics: Timetable Issue
+                            </span>
+                            <span class="lpu-chip" data-prompt="A faculty member was rude and unprofessional during class and used inappropriate language with students.">
+                                <i class="bi bi-person-x text-warning"></i> Faculty: Misconduct
+                            </span>
+                            <span class="lpu-chip" data-prompt="My semester fee has been deducted twice from my bank account. Transaction UTR attached below.">
+                                <i class="bi bi-cash-stack text-success"></i> Fees: Double Deduction
+                            </span>
+                            <span class="lpu-chip" data-prompt="My scholarship amount has not been credited to my fee ledger despite confirmation from the scholarship cell.">
+                                <i class="bi bi-award text-warning"></i> Fees: Scholarship Not Credited
                             </span>
                         </div>
                     </div>
@@ -568,26 +585,41 @@
 
         <!-- Single-Row Scrollable Quick Prompt Chips -->
         <div class="lpu-chat-quick" aria-label="Quick Assistant Prompts">
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the 75% attendance and exam rule?">
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the 75% attendance and exam eligibility rule at LPU?">
                 <i class="bi bi-journal-check text-primary"></i> Exam &amp; Attendance
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the fee refund and scholarship policy?">
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the fee refund and scholarship policy at LPU?">
                 <i class="bi bi-cash-stack text-success"></i> Fee Refund
             </button>
             <button type="button" class="lpu-chat-chip" data-chat-q="Check my ticket status">
                 <i class="bi bi-card-checklist text-info"></i> My Tickets
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What are the hostel maintenance rules and SLA?">
+            <button type="button" class="lpu-chat-chip" data-chat-q="What are the hostel maintenance rules and resolution SLA?">
                 <i class="bi bi-tools text-warning"></i> Hostel &amp; Repairs
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the campus Wi-Fi and UMS policy?">
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the campus Wi-Fi, UMS and LMS portal policy?">
                 <i class="bi bi-wifi text-primary"></i> Wi-Fi &amp; UMS
             </button>
             <button type="button" class="lpu-chat-chip" data-chat-q="What is the anti-ragging and campus security policy?">
                 <i class="bi bi-shield-check text-danger"></i> Anti-Ragging
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="How does grievance closure work?">
+            <button type="button" class="lpu-chat-chip" data-chat-q="How does grievance closure and sentiment verification work?">
                 <i class="bi bi-patch-check text-success"></i> Closure Rules
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="What should I do if my internal marks or grade sheet is wrong on UMS?">
+                <i class="bi bi-mortarboard text-warning"></i> Academics
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="What are the rules for class schedule, timetable changes, and classroom issues?">
+                <i class="bi bi-calendar3 text-info"></i> Class Issues
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="How do I report rude or unprofessional faculty behavior at LPU?">
+                <i class="bi bi-person-badge text-danger"></i> Faculty Conduct
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="What is the procedure for exam date sheet clash, re-evaluation and admit card issues?">
+                <i class="bi bi-clipboard-check text-primary"></i> Examination
+            </button>
+            <button type="button" class="lpu-chat-chip" data-chat-q="My semester fee was deducted twice. What is the fees redressal process?">
+                <i class="bi bi-currency-rupee text-success"></i> Fees Issue
             </button>
         </div>
 
