@@ -158,13 +158,7 @@ def complaint_history(student_id):
 
 @app.route('/')
 def home():
-    role = session.get('role')
-    if role == 'admin':
-        return redirect(url_for('admin'))
-    if role == 'faculty' and session.get('faculty_id'):
-        return redirect(url_for('assigned_dashboard'))
-    if role == 'student' and session.get('student_id'):
-        return redirect(url_for('student_portal'))
+    # Always show the public gateway first, even when this browser has a saved session.
     return redirect(url_for('login'))
 
 @app.route('/switch')
@@ -1063,6 +1057,8 @@ def admin_delete_rag_doc(doc_id):
 def api_chat():
     payload = request.get_json(silent=True) or {}
     message = (payload.get('message') or '').strip()
+    if not message:
+        return jsonify({'error': 'Please provide a message.', 'reply': 'Please type something!', 'powered_by': 'local-rag'}), 400
     if len(message) > 1000:
         return jsonify({'error': 'Message too long (max 1000 characters).'}), 400
 
@@ -1070,12 +1066,39 @@ def api_chat():
     student_name = session.get('student_name') if session.get('role') == 'student' else None
     prev_id = session.get('chat_interaction_id')
 
-    result = generate_chatbot_response(
-        message,
-        student_id=student_id,
-        student_name=student_name,
-        previous_interaction_id=prev_id
-    )
+    from model.rag_engine import _generate_local_chatbot_response
+    local_only = payload.get('local_only') is True
+    try:
+        if local_only:
+            result = _generate_local_chatbot_response(message, student_id=student_id, student_name=student_name)
+            result['powered_by'] = 'local-rag'
+            result['interaction_id'] = prev_id
+        else:
+            result = generate_chatbot_response(
+                message,
+                student_id=student_id,
+                student_name=student_name,
+                previous_interaction_id=prev_id
+            )
+    except Exception as e:
+        print(f"[Chat API Error] {type(e).__name__}")
+        try:
+            result = _generate_local_chatbot_response(message, student_id=student_id, student_name=student_name)
+            result['powered_by'] = 'local-rag'
+            result['interaction_id'] = prev_id
+            result['_fallback'] = True
+        except Exception as fallback_error:
+            print(f"[Chat Local Fallback Error] {type(fallback_error).__name__}")
+            result = {
+                'reply': 'The assistant is temporarily unavailable. Please try again shortly.',
+                'powered_by': 'local-rag',
+                'intent': 'error',
+                'sources': [],
+                'analysis': None,
+                'suggested_grievance': None,
+                'interaction_id': prev_id
+            }
+
     if result.get('interaction_id'):
         session['chat_interaction_id'] = result['interaction_id']
     return jsonify(result)
@@ -1159,9 +1182,18 @@ def logout():
     return redirect(url_for('login'))
 
 if __name__ == '__main__':
+    import webbrowser, threading
+    host = os.getenv('HOST', '127.0.0.1')
+    port = int(os.getenv('PORT', 5000))
+    browser_host = '127.0.0.1' if host == '0.0.0.0' else host
+    url = f'http://{browser_host}:{port}/'
+    # Open the public gateway after the server starts; / always redirects to the login page.
+    threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    print(f"\n  ✅  LPU Smart Grievance System starting at {url}\n")
     app.run(
-        host=os.getenv('HOST', '127.0.0.1'),
-        port=int(os.getenv('PORT', 5000)),
+        host=host,
+        port=port,
         debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true',
-        threaded=True
+        threaded=True,
+        use_reloader=False   # prevent double browser open in debug reloader
     )

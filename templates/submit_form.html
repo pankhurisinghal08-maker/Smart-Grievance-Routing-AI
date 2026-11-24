@@ -550,7 +550,7 @@
                     <div class="fw-bold small lh-sm text-truncate">LPU AI Student Assistant</div>
                     <div class="lpu-chat-status-pill" id="chatEngineStatus">
                         <span class="lpu-chat-status-dot {% if not gemini_enabled %}local{% endif %}" id="chatStatusDot"></span>
-                        <span id="chatStatusText">{% if gemini_enabled %}Gemini AI + Policy RAG{% else %}Local Policy RAG{% endif %}</span>
+                        <span id="chatStatusText">{% if gemini_enabled %}Gemini AI + ChromaDB Vector RAG{% else %}ChromaDB Vector RAG{% endif %}</span>
                     </div>
                 </div>
             </div>
@@ -585,48 +585,48 @@
 
         <!-- Single-Row Scrollable Quick Prompt Chips -->
         <div class="lpu-chat-quick" aria-label="Quick Assistant Prompts">
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the 75% attendance and exam eligibility rule at LPU?">
-                <i class="bi bi-journal-check text-primary"></i> Exam &amp; Attendance
+            <button type="button" class="lpu-chat-chip" data-chat-q="My attendance record is incorrect. Please explain how I can request a correction before exam eligibility is assessed.">
+                <i class="bi bi-journal-check text-primary"></i> Attendance &amp; Eligibility
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the fee refund and scholarship policy at LPU?">
-                <i class="bi bi-cash-stack text-success"></i> Fee Refund
+            <button type="button" class="lpu-chat-chip" data-chat-q="How do I raise a fee payment discrepancy, scholarship delay, fee receipt problem, or refund request? Please list the details I should prepare.">
+                <i class="bi bi-cash-stack text-success"></i> Fees &amp; Scholarships
             </button>
             <button type="button" class="lpu-chat-chip" data-chat-q="Check my ticket status">
-                <i class="bi bi-card-checklist text-info"></i> My Tickets
+                <i class="bi bi-card-checklist text-info"></i> My Grievances
             </button>
             <button type="button" class="lpu-chat-chip" data-chat-q="What are the hostel maintenance rules and resolution SLA?">
                 <i class="bi bi-tools text-warning"></i> Hostel &amp; Repairs
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the campus Wi-Fi, UMS and LMS portal policy?">
-                <i class="bi bi-wifi text-primary"></i> Wi-Fi &amp; UMS
+            <button type="button" class="lpu-chat-chip" data-chat-q="How should I report a UMS, LMS, student portal, or academic record access problem?">
+                <i class="bi bi-wifi text-primary"></i> Portal &amp; Records
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the anti-ragging and campus security policy?">
-                <i class="bi bi-shield-check text-danger"></i> Anti-Ragging
+            <button type="button" class="lpu-chat-chip" data-chat-q="How can I confidentially report a student safety, harassment, or ragging concern?">
+                <i class="bi bi-shield-check text-danger"></i> Student Safety
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="How does grievance closure and sentiment verification work?">
-                <i class="bi bi-patch-check text-success"></i> Closure Rules
+            <button type="button" class="lpu-chat-chip" data-chat-q="Please explain the grievance process, what information to include, and what happens after submission.">
+                <i class="bi bi-patch-check text-success"></i> Grievance Process
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What should I do if my internal marks or grade sheet is wrong on UMS?">
-                <i class="bi bi-mortarboard text-warning"></i> Academics
+            <button type="button" class="lpu-chat-chip" data-chat-q="My internal assessment marks are missing or incorrect on my grade sheet. How can I request a correction?">
+                <i class="bi bi-mortarboard text-warning"></i> Marks &amp; Assessment
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What are the rules for class schedule, timetable changes, and classroom issues?">
-                <i class="bi bi-calendar3 text-info"></i> Class Issues
+            <button type="button" class="lpu-chat-chip" data-chat-q="My timetable, course registration, or classroom allocation is incorrect. How do I report it?">
+                <i class="bi bi-calendar3 text-info"></i> Classes &amp; Timetable
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="How do I report rude or unprofessional faculty behavior at LPU?">
-                <i class="bi bi-person-badge text-danger"></i> Faculty Conduct
+            <button type="button" class="lpu-chat-chip" data-chat-q="I have a concern about classroom conduct, disruptive behavior, or a faculty interaction. Please help me report it respectfully.">
+                <i class="bi bi-person-badge text-danger"></i> Class Conduct
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="What is the procedure for exam date sheet clash, re-evaluation and admit card issues?">
-                <i class="bi bi-clipboard-check text-primary"></i> Examination
+            <button type="button" class="lpu-chat-chip" data-chat-q="What are the steps for an exam date-sheet clash, re-evaluation request, or admit-card issue?">
+                <i class="bi bi-clipboard-check text-primary"></i> Exams &amp; Assessment
             </button>
-            <button type="button" class="lpu-chat-chip" data-chat-q="My semester fee was deducted twice. What is the fees redressal process?">
-                <i class="bi bi-currency-rupee text-success"></i> Fees Issue
+            <button type="button" class="lpu-chat-chip" data-chat-q="My semester fee was deducted twice. Please help me prepare a clear fee-discrepancy grievance.">
+                <i class="bi bi-currency-rupee text-success"></i> Fee Discrepancy
             </button>
         </div>
 
         <!-- Composer Footer -->
         <form id="chatForm" class="lpu-chat-footer">
             <div class="lpu-chat-input-box">
-                <input type="text" id="chatInput" placeholder="Ask a policy question, track tickets, or describe an issue..." maxlength="500" autocomplete="off" required>
+                <input type="text" id="chatInput" placeholder="Ask about fees, exams, attendance, classes, conduct, or ticket status..." maxlength="1000" autocomplete="off" required>
                 <button type="button" id="chatMicBtn" class="lpu-chat-mic-btn d-none" title="Voice Input (Speak your question)">
                     <i class="bi bi-mic-fill"></i>
                 </button>
@@ -635,7 +635,7 @@
                 </button>
             </div>
             <div class="d-flex justify-content-between align-items-center mt-1 px-1">
-                <small class="text-muted" style="font-size: 0.68rem;">Grounded in official LPU terms &amp; your live tickets</small>
+                <small class="text-muted" style="font-size: 0.68rem;">Policy guidance when indexed • Live ticket status after sign-in</small>
                 <small id="chatCharHint" class="text-muted" style="font-size: 0.68rem;"></small>
             </div>
         </form>
@@ -736,7 +736,10 @@
             }
         });
 
-        // Enhanced Floating AI Student Assistant Chatbot (Gemini + RAG)
+        // ══════════════════════════════════════════════════════════════════
+        // LPU AI Student Assistant — Advanced Chatbot Engine v3.0
+        // Gemini AI + Policy RAG + Live Ticket Lookup + Smart UX
+        // ══════════════════════════════════════════════════════════════════
         const chatFab = document.getElementById('chatFabBtn');
         const chatWidget = document.getElementById('chatWidget');
         const chatClose = document.getElementById('chatCloseBtn');
@@ -756,6 +759,7 @@
         const chatStatusDot = document.getElementById('chatStatusDot');
         const chatStatusText = document.getElementById('chatStatusText');
         const studentFirstName = {{ student.name.split()[0]|tojson }};
+        const chatEngineLabel = {{ ("Gemini AI + Policy RAG" if gemini_enabled else "Local Policy RAG")|tojson }};
         let loadedPolicies = null;
 
         function getTimeLabel() {
@@ -772,40 +776,69 @@
                 .replace(/'/g, '&#39;');
         }
 
-        // Safe minimal Markdown formatter (bold, inline code, bullet/numbered lists)
+        // Advanced Markdown renderer — supports bold, italic, inline code, bullets, numbered lists, headings, links, horizontal rules
         function formatChatMarkdown(rawText) {
-            const lines = String(rawText || '').split('\n');
+            if (!rawText) return '';
+            const lines = String(rawText).split('\n');
             let html = '';
-            let inList = false;
+            let inUl = false, inOl = false;
+
+            const renderInline = (text) => {
+                return escapeHtml(text)
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                    .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.85em;">$1</code>')
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:var(--lpu-orange);">$1</a>');
+            };
+
+            const closeList = () => {
+                if (inUl) { html += '</ul>'; inUl = false; }
+                if (inOl) { html += '</ol>'; inOl = false; }
+            };
 
             for (const rawLine of lines) {
-                const line = rawLine.trim();
-                const bulletMatch = line.match(/^(?:[•\-\*]|\d+\.)\s+(.*)$/);
-                if (bulletMatch) {
-                    if (!inList) {
-                        html += '<ul>';
-                        inList = true;
-                    }
-                    let item = escapeHtml(bulletMatch[1])
-                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                        .replace(/`([^`]+)`/g, '<code>$1</code>');
-                    html += '<li>' + item + '</li>';
+                const line = rawLine.trimEnd();
+                const trimmed = line.trim();
+
+                // Horizontal rule
+                if (/^---+$/.test(trimmed)) {
+                    closeList();
+                    html += '<hr style="border-color:var(--lpu-border);margin:0.5rem 0;">';
+                    continue;
+                }
+                // Headings (## or ###)
+                const h3 = trimmed.match(/^###\s+(.*)/);
+                const h2 = trimmed.match(/^##\s+(.*)/);
+                const h1 = trimmed.match(/^#\s+(.*)/);
+                if (h3) { closeList(); html += '<div class="fw-bold text-dark mt-2 mb-1" style="font-size:0.9rem;">' + renderInline(h3[1]) + '</div>'; continue; }
+                if (h2) { closeList(); html += '<div class="fw-bold text-dark mt-2 mb-1" style="font-size:0.95rem;color:var(--lpu-navy)!important;">' + renderInline(h2[1]) + '</div>'; continue; }
+                if (h1) { closeList(); html += '<div class="fw-bold mt-2 mb-1" style="font-size:1rem;color:var(--lpu-navy)!important;">' + renderInline(h1[1]) + '</div>'; continue; }
+
+                // Unordered bullet
+                const uMatch = trimmed.match(/^[•\-\*]\s+(.*)/);
+                if (uMatch) {
+                    if (inOl) { html += '</ol>'; inOl = false; }
+                    if (!inUl) { html += '<ul style="margin:0.3rem 0 0.3rem 1.1rem;padding:0;list-style:disc;">'; inUl = true; }
+                    html += '<li style="margin-bottom:0.15rem;">' + renderInline(uMatch[1]) + '</li>';
+                    continue;
+                }
+                // Numbered list
+                const oMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+                if (oMatch) {
+                    if (inUl) { html += '</ul>'; inUl = false; }
+                    if (!inOl) { html += '<ol style="margin:0.3rem 0 0.3rem 1.1rem;padding:0;">'; inOl = true; }
+                    html += '<li style="margin-bottom:0.15rem;">' + renderInline(oMatch[2]) + '</li>';
+                    continue;
+                }
+
+                closeList();
+                if (!trimmed) {
+                    html += '<div style="height:0.4rem;"></div>';
                 } else {
-                    if (inList) {
-                        html += '</ul>';
-                        inList = false;
-                    }
-                    if (!line) {
-                        html += '<div style="height: 0.35rem;"></div>';
-                    } else {
-                        let formatted = escapeHtml(line)
-                            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                            .replace(/`([^`]+)`/g, '<code>$1</code>');
-                        html += '<div>' + formatted + '</div>';
-                    }
+                    html += '<div style="margin-bottom:0.1rem;">' + renderInline(trimmed) + '</div>';
                 }
             }
-            if (inList) html += '</ul>';
+            closeList();
             return html;
         }
 
@@ -950,7 +983,7 @@
                 const isGem = poweredBy.includes('gemini');
                 const tag = document.createElement('span');
                 tag.className = 'lpu-chat-engine-tag' + (isGem ? ' gemini' : '');
-                tag.innerHTML = isGem ? '<i class="bi bi-stars me-1"></i>Gemini AI + RAG' : '<i class="bi bi-cpu me-1"></i>Local RAG';
+                tag.innerHTML = isGem ? '<i class="bi bi-stars me-1"></i>Gemini + ChromaDB RAG' : '<i class="bi bi-database-check me-1"></i>ChromaDB RAG';
                 meta.appendChild(tag);
             }
             const ts = document.createElement('span');
@@ -968,15 +1001,34 @@
         function showWelcomeMessage() {
             if (!chatMessages) return;
             chatMessages.innerHTML = '';
+            const welcomeText =
+                'Hi **' + studentFirstName + '**! 👋 I\'m your **LPU AI Student Assistant** — powered by **' + chatEngineLabel + '**.\n\n' +
+                'I can help with:\n' +
+                '• **Fees and scholarships** — payment discrepancies, receipts, delays, and refund guidance\n' +
+                '• **Exams and attendance** — eligibility, date-sheet clashes, marks, re-evaluation, and admit cards\n' +
+                '• **Academic services** — course registration, timetables, classroom allocation, and student portals\n' +
+                '• **Class conduct and safety** — how to raise a concern respectfully and through the appropriate channel\n' +
+                '• **Grievance support** — prepare a clear report and check your submitted ticket status\n\n' +
+                'I will cite indexed university guidance when available and make clear when a rule needs confirmation. Use a topic below or describe your concern.';
             appendChatMessage({
                 sender: 'bot',
                 isWelcome: true,
-                text: 'Hi **' + studentFirstName + '**! I am your **LPU AI Student Assistant**.\n• Ask about university rules & policies (75% attendance, hostel, Wi-Fi, fees/refunds, exams, library, anti-ragging)\n• Check the live status of your submitted tickets\n• Describe any campus issue for instant department routing, urgency score (0-100), and one-click grievance autofill'
+                text: welcomeText
             });
         }
         showWelcomeMessage();
 
-        function appendTypingIndicator() {
+        function appendTypingIndicator(stage) {
+            removeTypingIndicator();
+            const stages = {
+                thinking:   { icon: 'bi-cpu',           text: 'Thinking...' },
+                searching:  { icon: 'bi-search',         text: 'Searching LPU policies &amp; knowledge base...' },
+                analyzing:  { icon: 'bi-graph-up',       text: 'Analyzing with Gemini AI...' },
+                tickets:    { icon: 'bi-card-checklist', text: 'Fetching your live ticket status...' },
+                routing:    { icon: 'bi-diagram-3',      text: 'Running AI department router...' },
+                generating: { icon: 'bi-stars',          text: 'Generating personalized response...' },
+            };
+            const s = stages[stage] || stages.thinking;
             const row = document.createElement('div');
             row.id = 'chatTypingRow';
             row.className = 'lpu-chat-row bot';
@@ -984,7 +1036,8 @@
                 '<div class="lpu-chat-msg-avatar bot"><i class="bi bi-robot"></i></div>' +
                 '<div class="lpu-chat-bubble bot lpu-chat-typing">' +
                     '<span class="lpu-typing-dots"><span></span><span></span><span></span></span>' +
-                    '<span class="text-muted small ms-1">Searching LPU policies &amp; analyzing...</span>' +
+                    '<i class="bi ' + s.icon + ' text-primary ms-2 me-1" style="font-size:0.8rem;"></i>' +
+                    '<span class="text-muted small">' + s.text + '</span>' +
                 '</div>';
             chatMessages?.appendChild(row);
             if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -992,6 +1045,36 @@
 
         function removeTypingIndicator() {
             document.getElementById('chatTypingRow')?.remove();
+        }
+
+        // Smart typing stage sequencer — shows different status messages as AI works
+        let _typingTimer = null;
+        function startSmartTyping(userMessage) {
+            const msg = (userMessage || '').toLowerCase();
+            // Pick stage sequence based on likely intent
+            let stages;
+            if (/ticket|complaint|status|my issue|check/i.test(msg)) {
+                stages = ['thinking', 'tickets', 'generating'];
+            } else if (/hello|hi|hey|how are|thanks|bye|who are/i.test(msg) && msg.split(' ').length <= 5) {
+                stages = ['thinking', 'generating'];
+            } else if (/policy|rule|regulation|attendance|75|hostel|wifi|fee|refund|anti.ragg|closure|ordinance/i.test(msg)) {
+                stages = ['searching', 'analyzing', 'generating'];
+            } else if (/broken|not working|leaking|spark|stolen|stolen|rude|missing mark|exam clash|slow internet/i.test(msg)) {
+                stages = ['routing', 'searching', 'analyzing', 'generating'];
+            } else {
+                stages = ['thinking', 'searching', 'generating'];
+            }
+            let i = 0;
+            appendTypingIndicator(stages[0]);
+            _typingTimer = setInterval(() => {
+                i++;
+                if (i < stages.length) appendTypingIndicator(stages[i]);
+            }, 2800);
+        }
+
+        function stopSmartTyping() {
+            if (_typingTimer) { clearInterval(_typingTimer); _typingTimer = null; }
+            removeTypingIndicator();
         }
 
         async function loadPoliciesIntoDrawer() {
@@ -1087,7 +1170,7 @@
         chatInput?.addEventListener('input', () => {
             if (!chatCharHint) return;
             const len = chatInput.value.length;
-            chatCharHint.textContent = len > 250 ? (500 - len) + ' left' : '';
+            chatCharHint.textContent = len > 800 ? (1000 - len) + ' left' : '';
         });
 
         // Optional Web Speech API Voice Input
@@ -1123,8 +1206,25 @@
             recognition.onend = () => {
                 isRecording = false;
                 chatMicBtn.classList.remove('recording');
-                if (chatInput) chatInput.placeholder = 'Ask a policy question, track tickets, or describe an issue...';
+                if (chatInput) chatInput.placeholder = 'Ask about fees, exams, attendance, classes, conduct, or ticket status...';
             };
+        }
+
+        function renderChatResponse(data) {
+            const poweredBy = data.powered_by || 'local-rag';
+            const isGem = poweredBy.includes('gemini');
+            if (chatStatusDot && chatStatusText) {
+                chatStatusDot.classList.toggle('local', !isGem);
+                chatStatusText.textContent = isGem ? 'Gemini AI + ChromaDB Vector RAG' : 'ChromaDB Vector RAG';
+            }
+            appendChatMessage({
+                text: (data.reply || '').trim() || 'I could not generate a response. Please rephrase your question.',
+                sender: 'bot',
+                sources: data.sources || [],
+                analysis: data.analysis || null,
+                suggestedGrievance: data.suggested_grievance || null,
+                poweredBy: poweredBy
+            });
         }
 
         async function sendChatMessage(text) {
@@ -1134,36 +1234,63 @@
             if (chatInput) chatInput.value = '';
             if (chatCharHint) chatCharHint.textContent = '';
             if (chatSendBtn) chatSendBtn.disabled = true;
-            appendTypingIndicator();
+
+            startSmartTyping(cleaned);
+
+            // Leave time for the bounded Gemini attempt and provider fallback.
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 18000);
 
             try {
                 const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: cleaned })
+                    body: JSON.stringify({ message: cleaned }),
+                    signal: controller.signal
                 });
-                removeTypingIndicator();
+                clearTimeout(timeoutId);
+                stopSmartTyping();
+
                 if (res.ok) {
-                    const data = await res.json();
-                    const isGem = (data.powered_by || '').includes('gemini');
-                    if (chatStatusDot && chatStatusText) {
-                        chatStatusDot.classList.toggle('local', !isGem);
-                        chatStatusText.textContent = isGem ? 'Gemini AI + Policy RAG' : 'Local Policy RAG';
-                    }
-                    appendChatMessage({
-                        text: data.reply || 'Sorry, I could not process that request.',
-                        sender: 'bot',
-                        sources: data.sources || [],
-                        analysis: data.analysis || null,
-                        suggestedGrievance: data.suggested_grievance || null,
-                        poweredBy: data.powered_by || 'local-rag'
-                    });
+                    renderChatResponse(await res.json());
+                } else if (res.status === 429) {
+                    appendChatMessage({ text: '⏳ The AI is currently busy (rate limit). Please wait a few seconds and try again.', sender: 'bot', poweredBy: 'local-rag' });
                 } else {
-                    appendChatMessage({ text: 'Unable to reach the AI assistant right now. Please try again.', sender: 'bot' });
+                    appendChatMessage({ text: '❌ Unable to reach the AI assistant right now. Please try again.', sender: 'bot', poweredBy: 'local-rag' });
                 }
             } catch (err) {
-                removeTypingIndicator();
-                appendChatMessage({ text: 'Network error while contacting the AI assistant.', sender: 'bot' });
+                clearTimeout(timeoutId);
+                stopSmartTyping();
+                if (err.name === 'AbortError') {
+                    // Actually request a deterministic local reply instead of only claiming to fetch one.
+                    startSmartTyping(cleaned);
+                    const fallbackController = new AbortController();
+                    const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 8000);
+                    try {
+                        const fallbackRes = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: cleaned, local_only: true }),
+                            signal: fallbackController.signal
+                        });
+                        clearTimeout(fallbackTimeoutId);
+                        stopSmartTyping();
+                        if (!fallbackRes.ok) throw new Error('Local assistant request failed.');
+                        renderChatResponse(await fallbackRes.json());
+                    } catch (fallbackError) {
+                        clearTimeout(fallbackTimeoutId);
+                        stopSmartTyping();
+                        appendChatMessage({
+                            text: 'The assistant could not complete this request. Please try again in a moment.',
+                            sender: 'bot',
+                            poweredBy: 'local-rag'
+                        });
+                    }
+                } else if (err.name === 'TypeError' && !navigator.onLine) {
+                    appendChatMessage({ text: '📶 You appear to be offline. Please check your internet connection and try again.', sender: 'bot', poweredBy: 'local-rag' });
+                } else {
+                    appendChatMessage({ text: '🔄 Network issue while contacting the AI. Please try again.', sender: 'bot', poweredBy: 'local-rag' });
+                }
             } finally {
                 if (chatSendBtn) chatSendBtn.disabled = false;
                 chatInput?.focus();

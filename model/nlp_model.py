@@ -199,7 +199,8 @@ def _domain_intent_hint(clean_text):
 
     if _has_intent(clean_text, [
         'exam', 'examination', 'admit card', 'hall ticket', 'date sheet', 'datesheet',
-        'internal marks', 'grade card', 'marksheet', 'evaluation', 'reappear', 'exam clash', 'question paper'
+        'internal marks', 'grade card', 'marksheet', 'evaluation', 'reappear', 'exam clash', 'question paper',
+        'attendance', 'attendance record', 'exam eligibility', 'timetable', 'class schedule', 'course registration'
     ]):
         return 'Examination'
 
@@ -212,7 +213,9 @@ def _domain_intent_hint(clean_text):
     if _has_intent(clean_text, [
         'ragging', 'harass', 'harassment', 'bully', 'bullying', 'abuse', 'abusive',
         'fight', 'fighting', 'violence', 'threat', 'assault', 'roommate dispute',
-        'misbehavior', 'misconduct', 'rude staff', 'smoking in hostel', 'loud music'
+        'misbehavior', 'misconduct', 'rude staff', 'faculty misconduct', 'faculty interaction',
+        'class discipline', 'classroom conduct', 'classroom disruption', 'disruptive behavior',
+        'unprofessional conduct', 'smoking in hostel', 'loud music'
     ]):
         return 'Discipline'
 

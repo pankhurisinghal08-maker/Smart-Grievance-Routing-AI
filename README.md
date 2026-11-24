@@ -18,7 +18,11 @@ An intelligent, enterprise campus grievance redressal and AI routing platform. T
   - A grievance cannot be closed until the student submits satisfaction feedback.
   - An integrated NLP sentiment classifier (`Positive` vs `Negative`) verifies the student's remarks.
   - Only when positive feedback is verified can Central Administration permanently close the grievance. Negative feedback blocks closure and alerts administration to take remedial action.
-- **Clean MySQL Integration**: Direct connection with MySQL relational database storing university student records (with registration numbers) and faculty personnel profiles.
+- **Faculty-Grade AI Student Assistant & Academic Advisor**: Powered by **ChromaDB Vector Database** and **Google Gemini AI**.
+  - Dense vectorization (384-dimensional embeddings via ONNX `all-MiniLM-L6-v2`) indexed in persistent ChromaDB collections and synchronized with MySQL.
+  - Semantic vector retrieval grounding queries in official university academic regulations, 75% attendance rules, exam date sheet clashes, re-evaluation, faculty conduct, and fee policies.
+  - Real-time live ticket lookup directly from MySQL database.
+- **Clean MySQL Integration**: Direct connection with MySQL relational database storing university student records (with registration numbers), complaints, access logs, and vectorized policy embeddings.
 
 ---
 
@@ -80,7 +84,7 @@ ADMIN_PASSWORD=Pankhuri1007
 
 # Optional: Add a Gemini API key for conversational RAG chatbot (auto-falls back to local RAG if omitted)
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-4-hydrogen
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 ### 3. Initialize & Train AI Models (Auto-trained on startup)
